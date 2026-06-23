@@ -1,0 +1,989 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="theme-color" content="#171210" />
+<title>Field Log</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #171210; }
+  #root { min-height: 100vh; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.3.1",
+    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+    "lucide-react": "https://esm.sh/lucide-react@0.383.0?external=react",
+    "recharts": "https://esm.sh/recharts@2.12.7?external=react,react-dom"
+  }
+}
+</script>
+
+<script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js"></script>
+
+<script type="text/babel" data-presets="react" data-type="module">
+import React, { useState, useEffect } from "react";
+import { createRoot } from "react-dom/client";
+import {
+  Plus, X, ChevronDown, ChevronUp, Trash2, Users, Pencil,
+  Home, AlertTriangle, Instagram, Wine, RotateCcw, Download, Link2, Clock, UserPlus,
+  Music, PartyPopper, Footprints, Smartphone, TrendingUp, TrendingDown,
+} from "lucide-react";
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  ScatterChart, Scatter, PieChart, Pie, Cell, Legend,
+} from "recharts";
+
+const COLORS = {
+  bg: "#171210", surface: "#221b16", surface2: "#2a221b", border: "#3a2f26",
+  ink: "#f0e6d8", inkMuted: "#a8978a", inkFaint: "#6e6155", warn: "#b0512e", gold: "#c99a3e",
+};
+const PIE_COLORS = ["#8a8f5c", "#c99a3e", "#b0512e", "#6e6155", "#a8978a", "#5c534a"];
+
+const STATUS = {
+  active:   { label: "Active",   color: "#8a8f5c" },
+  warming:  { label: "Warming",  color: "#c99a3e" },
+  inactive: { label: "Inactive", color: "#6e7b85" },
+  closed:   { label: "Closed",   color: "#5c534a" },
+};
+const STATUS_ORDER = ["active", "warming", "inactive", "closed"];
+
+const OWN_PLACE = [
+  { id: "yes", label: "Yes" }, { id: "no", label: "No" }, { id: "unknown", label: "Don't know yet" },
+];
+
+const CHANNEL = {
+  clubs:         { label: "Clubs", icon: Music },
+  bars:          { label: "Bars", icon: Wine },
+  house_parties: { label: "House Parties", icon: PartyPopper },
+  street:        { label: "Street", icon: Footprints },
+  instagram:     { label: "Instagram", icon: Instagram },
+  dating_apps:   { label: "Dating Apps", icon: Smartphone },
+  other:         { label: "Other", icon: Users },
+};
+const CHANNEL_ORDER = ["clubs", "bars", "house_parties", "street", "instagram", "dating_apps", "other"];
+const ROSTER_CAP = 3;
+const STALE_DAYS = 5;
+
+const VENUE_TYPES = [
+  { id: "bar", label: "Bar" }, { id: "club", label: "Club" },
+  { id: "house_party", label: "House Party" }, { id: "street", label: "Street" },
+];
+const INITIAL_INTEREST = [{ id: "high", label: "High" }, { id: "low", label: "Low" }];
+const OPENERS = [
+  { id: "direct", label: "Direct" }, { id: "situational", label: "Situational" },
+  { id: "observational", label: "Observational" }, { id: "compliment", label: "Compliment" },
+  { id: "opinion", label: "Opinion opener" }, { id: "other", label: "Other" },
+];
+const OUTCOMES = [
+  { id: "nothing", label: "Nothing" }, { id: "number", label: "Number" },
+  { id: "instagram", label: "Instagram" }, { id: "number_ig", label: "Number + Instagram" },
+  { id: "instant_date", label: "Instant date set" }, { id: "had_sex", label: "Had sex" }, { id: "other", label: "Other" },
+];
+const FOLLOWUPS = [
+  { id: "pending", label: "Pending" }, { id: "no_reply", label: "No reply" },
+  { id: "flaked", label: "Flaked" }, { id: "still_talking", label: "Still talking" },
+  { id: "met_up", label: "Met up" }, { id: "had_sex", label: "Had sex" }, { id: "didnt_work_out", label: "Didn't work out" },
+];
+const ETHNICITIES = [
+  { id: "black", label: "Black" }, { id: "white", label: "White" },
+  { id: "hispanic", label: "Hispanic/Latina" }, { id: "asian", label: "Asian" },
+  { id: "south_asian", label: "South Asian" }, { id: "middle_eastern", label: "Middle Eastern" },
+  { id: "mixed", label: "Mixed" }, { id: "other", label: "Other" },
+];
+
+function labelFor(list, id, custom) {
+  if (id === "other") return custom && custom.trim() ? custom.trim() : "Other";
+  const f = list.find((x) => x.id === id);
+  return f ? f.label : id;
+}
+function isSecured(entry) { return entry.outcome && entry.outcome !== "nothing"; }
+
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const todayISO = () => new Date().toISOString().slice(0, 10);
+const fmtDate = (iso) => {
+  if (!iso) return "—";
+  const d = new Date(iso + "T00:00:00");
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+};
+const daysSince = (iso) => {
+  if (!iso) return 9999;
+  const d = new Date(iso + "T00:00:00");
+  return Math.floor((Date.now() - d.getTime()) / 86400000);
+};
+const weekdayOf = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("en-US", { weekday: "short" });
+
+function groupRate(entries, keyFn) {
+  const groups = {};
+  entries.forEach((e) => {
+    const k = keyFn(e);
+    if (!groups[k]) groups[k] = { total: 0, secured: 0 };
+    groups[k].total += 1;
+    if (isSecured(e)) groups[k].secured += 1;
+  });
+  return Object.entries(groups).map(([name, v]) => ({ name, rate: v.total ? Math.round((v.secured / v.total) * 100) : 0, count: v.total }));
+}
+function bestWorst(rates) {
+  if (!rates.length) return null;
+  const sorted = [...rates].sort((a, b) => b.rate - a.rate);
+  return { best: sorted[0], worst: sorted[sorted.length - 1] };
+}
+
+function downloadCSV(filename, rows) {
+  if (!rows || !rows.length) return;
+  const headers = Object.keys(rows[0]);
+  const esc = (v) => '"' + String(v ?? "").replace(/"/g, '""') + '"';
+  const csv = [headers.join(","), ...rows.map((r) => headers.map((h) => esc(r[h])).join(","))].join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+async function safeGet(key) {
+  try { const raw = localStorage.getItem("fieldlog:" + key); return raw ? JSON.parse(raw) : null; }
+  catch { return null; }
+}
+async function safeSet(key, value) {
+  try { localStorage.setItem("fieldlog:" + key, JSON.stringify(value)); }
+  catch (e) { console.error("storage set failed", e); }
+}
+
+function RosterTracker() {
+  const [tab, setTab] = useState("overview");
+  const [roster, setRoster] = useState([]);
+  const [approaches, setApproaches] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [expanded, setExpanded] = useState(null);
+  const [addPersonDraft, setAddPersonDraft] = useState(null);
+  const [showAddApproach, setShowAddApproach] = useState(false);
+  const [editPerson, setEditPerson] = useState(null);
+  const [editApproach, setEditApproach] = useState(null);
+  const [noteDraft, setNoteDraft] = useState({});
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [rosterFilter, setRosterFilter] = useState("all");
+
+  useEffect(() => {
+    (async () => {
+      const r = await safeGet("roster-entries");
+      const a = await safeGet("approach-log");
+      setRoster(r || []); setApproaches(a || []);
+      setLoaded(true);
+    })();
+  }, []);
+  useEffect(() => { if (loaded) safeSet("roster-entries", roster); }, [roster, loaded]);
+  useEffect(() => { if (loaded) safeSet("approach-log", approaches); }, [approaches, loaded]);
+
+  const liveCapped = roster.filter((p) => p.status === "active" || p.status === "warming");
+  const inactiveList = roster.filter((p) => p.status === "inactive");
+  const overCap = liveCapped.length > ROSTER_CAP;
+
+  function addPerson(data) {
+    setRoster((r) => [...r, { id: uid(), lastContact: todayISO(), ...data, notes: data.notes || [] }]);
+    setAddPersonDraft(null);
+  }
+  function updatePerson(id, patch) { setRoster((r) => r.map((p) => (p.id === id ? { ...p, ...patch } : p))); }
+  function deletePerson(id) { setRoster((r) => r.filter((p) => p.id !== id)); }
+  function addNote(id) {
+    const text = (noteDraft[id] || "").trim();
+    if (!text) return;
+    setRoster((r) => r.map((p) => p.id === id ? { ...p, lastContact: todayISO(), notes: [{ id: uid(), date: todayISO(), text }, ...p.notes] } : p));
+    setNoteDraft((d) => ({ ...d, [id]: "" }));
+  }
+  function deleteNote(personId, noteId) {
+    setRoster((r) => r.map((p) => p.id === personId ? { ...p, notes: p.notes.filter((n) => n.id !== noteId) } : p));
+  }
+  function addApproach(entry) { setApproaches((a) => [{ id: uid(), followUp: "pending", ...entry }, ...a]); setShowAddApproach(false); }
+  function updateApproach(id, patch) { setApproaches((a) => a.map((e) => (e.id === id ? { ...e, ...patch } : e))); }
+  function deleteApproach(id) { setApproaches((a) => a.filter((e) => e.id !== id)); }
+  function resetApproaches() { setApproaches([]); setConfirmReset(false); }
+
+  function addToRoster(entry) {
+    setAddPersonDraft({
+      name: entry.name || "", status: "warming", ownPlace: "unknown", smashed: false,
+      channel: "bars", sourceApproachId: entry.id, leaveDate: null, returnDate: null,
+    });
+  }
+
+  function exportRoster() {
+    downloadCSV("roster.csv", roster.map((p) => ({
+      Name: p.name, Status: STATUS[p.status]?.label || p.status, Smashed: p.smashed ? "Yes" : "No",
+      OwnPlaceOrCanHost: labelFor(OWN_PLACE, p.ownPlace) || "Don't know yet", Channel: CHANNEL[p.channel]?.label || p.channel, Phone: p.phone || "",
+      LastContact: p.lastContact, LeaveDate: p.leaveDate || "", ReturnDate: p.returnDate || "",
+      Notes: (p.notes || []).map((n) => `${n.date}: ${n.text}`).join(" | "),
+    })));
+  }
+  function exportApproaches() {
+    downloadCSV("100-run.csv", approaches.map((e) => ({
+      Date: e.date, Name: e.name || "", Venue: labelFor(VENUE_TYPES, e.venueType), Ethnicity: labelFor(ETHNICITIES, e.ethnicity, e.ethnicityCustom),
+      InitialInterest: labelFor(INITIAL_INTEREST, e.initialInterest), Opener: labelFor(OPENERS, e.opener, e.openerCustom),
+      MadeOutSameNight: e.makeOut ? "Yes" : "No", HadSexSameNight: e.hadSexSameNight ? "Yes" : "No",
+      Outcome: labelFor(OUTCOMES, e.outcome, e.outcomeCustom), FollowUp: labelFor(FOLLOWUPS, e.followUp || "pending"),
+      Attractiveness: e.attractiveness, OverallRating: e.overallRating, Notes: e.notes || "",
+    })));
+  }
+
+  const smashedCount = roster.filter((p) => p.smashed).length;
+  const sameNightSexCount = approaches.filter((e) => e.hadSexSameNight).length;
+  const leavingSoonCount = liveCapped.filter((p) => p.leaveDate && -daysSince(p.leaveDate) >= 0 && -daysSince(p.leaveDate) <= 7).length;
+  const totalApproaches = approaches.length;
+  const securedTotal = approaches.filter(isSecured).length;
+  const securedRateTotal = totalApproaches ? Math.round((securedTotal / totalApproaches) * 100) : 0;
+  const stillTalkingCount = approaches.filter((e) => isSecured(e) && (e.followUp || "pending") === "still_talking").length;
+  const makeOutCount = approaches.filter((e) => e.makeOut).length;
+
+  const venueRates = groupRate(approaches, (e) => labelFor(VENUE_TYPES, e.venueType));
+  const ethnicityRates = groupRate(approaches, (e) => labelFor(ETHNICITIES, e.ethnicity, e.ethnicityCustom));
+  const openerRates = groupRate(approaches, (e) => labelFor(OPENERS, e.opener, e.openerCustom));
+  const interestRates = groupRate(approaches, (e) => labelFor(INITIAL_INTEREST, e.initialInterest));
+  const weekdayRates = groupRate(approaches, (e) => weekdayOf(e.date));
+
+  const insights = [
+    { label: "Venue", bw: bestWorst(venueRates) },
+    { label: "Ethnicity", bw: bestWorst(ethnicityRates) },
+    { label: "Opener", bw: bestWorst(openerRates) },
+    { label: "Initial interest", bw: bestWorst(interestRates) },
+    { label: "Day of week", bw: bestWorst(weekdayRates) },
+  ].filter((i) => i.bw);
+
+  const outcomeDist = (() => {
+    const groups = {};
+    approaches.forEach((e) => { const k = labelFor(OUTCOMES, e.outcome, e.outcomeCustom); groups[k] = (groups[k] || 0) + 1; });
+    return Object.entries(groups).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+  })();
+  const followUpDist = (() => {
+    const groups = {};
+    approaches.filter(isSecured).forEach((e) => { const k = labelFor(FOLLOWUPS, e.followUp || "pending"); groups[k] = (groups[k] || 0) + 1; });
+    return Object.entries(groups).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+  })();
+  const makeoutRates = groupRate(approaches, (e) => (e.makeOut ? "Made out" : "No makeout"));
+  const avg = (arr) => (arr.length ? (arr.reduce((s, v) => s + v, 0) / arr.length).toFixed(1) : "—");
+  const avgAttrSecured = avg(approaches.filter(isSecured).map((e) => e.attractiveness));
+  const avgAttrNot = avg(approaches.filter((e) => !isSecured(e)).map((e) => e.attractiveness));
+  const avgRatingSecured = avg(approaches.filter(isSecured).map((e) => e.overallRating));
+  const avgRatingNot = avg(approaches.filter((e) => !isSecured(e)).map((e) => e.overallRating));
+
+  return (
+    <div style={{ background: COLORS.bg, minHeight: "100vh", fontFamily: "Inter, sans-serif" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+        * { box-sizing: border-box; }
+        input, textarea, select { font-family: 'Inter', sans-serif; }
+        ::placeholder { color: ${COLORS.inkFaint}; }
+        input[type=range]{ accent-color: ${COLORS.gold}; }
+      `}</style>
+
+      <div style={{ maxWidth: 480, margin: "0 auto", paddingBottom: 100 }}>
+        <div style={{ padding: "24px 20px 16px" }}>
+          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: 2, color: COLORS.inkFaint, marginBottom: 4 }}>FIELD LOG</div>
+          <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 600, color: COLORS.ink, margin: 0 }}>Roster &amp; Leads</h1>
+        </div>
+
+        <div style={{ display: "flex", gap: 0, padding: "0 20px", borderBottom: `1px solid ${COLORS.border}`, overflowX: "auto" }}>
+          {[{ id: "overview", label: "Overview" }, { id: "roster", label: "Roster" }, { id: "approaches", label: "100 Run" }].map((t) => (
+            <button key={t.id} onClick={() => setTab(t.id)} style={{
+              background: "none", border: "none", padding: "10px 4px", marginRight: 24,
+              fontFamily: "Inter, sans-serif", fontSize: 14, fontWeight: 600, whiteSpace: "nowrap",
+              color: tab === t.id ? COLORS.ink : COLORS.inkFaint,
+              borderBottom: tab === t.id ? `2px solid ${COLORS.gold}` : "2px solid transparent", cursor: "pointer",
+            }}>{t.label}</button>
+          ))}
+        </div>
+
+        {tab === "overview" && (
+          <div style={{ padding: 20 }}>
+            <div style={monoLabel}>ROSTER</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 8, marginBottom: 22 }}>
+              <StatCard label="Slots filled" value={`${liveCapped.length}/${ROSTER_CAP}`} warn={overCap} />
+              <StatCard label="Smashed (total)" value={smashedCount} />
+            </div>
+
+            <div style={monoLabel}>100 RUN</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 8, marginBottom: 22 }}>
+              <StatCard label="Logged" value={`${totalApproaches}/100`} />
+              <StatCard label="Secured rate" value={`${securedRateTotal}%`} />
+              <StatCard label="Same-night makeouts" value={makeOutCount} />
+              <StatCard label="Same-night sex" value={sameNightSexCount} />
+            </div>
+
+            {insights.length > 0 && (
+              <>
+                <div style={monoLabel}>BEST &amp; WORST</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+                  {insights.map((i) => (
+                    <div key={i.label} style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "10px 14px" }}>
+                      <div style={{ fontSize: 11, color: COLORS.inkFaint, marginBottom: 6 }}>{i.label}</div>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                          <TrendingUp size={13} color="#8a8f5c" />
+                          <span style={{ fontSize: 13, color: COLORS.ink }}>{i.bw.best.name}</span>
+                          <span style={{ fontSize: 12, color: COLORS.inkMuted, fontFamily: "JetBrains Mono, monospace" }}>{i.bw.best.rate}% (n={i.bw.best.count})</span>
+                          {i.bw.best.count < 5 && <span style={{ fontSize: 9, fontFamily: "JetBrains Mono, monospace", color: COLORS.warn, border: `1px solid ${COLORS.warn}`, borderRadius: 4, padding: "0 4px" }}>LOW N</span>}
+                        </div>
+                        {i.bw.worst.name !== i.bw.best.name && (
+                          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                            <TrendingDown size={13} color={COLORS.warn} />
+                            <span style={{ fontSize: 13, color: COLORS.ink }}>{i.bw.worst.name}</span>
+                            <span style={{ fontSize: 12, color: COLORS.inkMuted, fontFamily: "JetBrains Mono, monospace" }}>{i.bw.worst.rate}% (n={i.bw.worst.count})</span>
+                            {i.bw.worst.count < 5 && <span style={{ fontSize: 9, fontFamily: "JetBrains Mono, monospace", color: COLORS.warn, border: `1px solid ${COLORS.warn}`, borderRadius: 4, padding: "0 4px" }}>LOW N</span>}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+            {insights.length === 0 && <EmptyState text="Log some approaches in 100 Run to see best/worst breakdowns here." />}
+
+            {approaches.length > 0 && (
+              <>
+                <div style={{ ...monoLabel, marginTop: 22 }}>FULL BREAKDOWN</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 8 }}>
+                  <BreakdownTable title="Secured rate by venue" rows={venueRates} />
+                  <BreakdownTable title="Secured rate by ethnicity" rows={ethnicityRates} />
+                  <BreakdownTable title="Secured rate by opener" rows={openerRates} />
+                  <BreakdownTable title="Secured rate by initial interest" rows={interestRates} />
+                  <BreakdownTable title="Secured rate by day of week" rows={weekdayRates} />
+                  <BreakdownTable title="Secured rate: makeout vs. no makeout" rows={makeoutRates} />
+                  <CountTable title="Outcome distribution (all approaches)" rows={outcomeDist} />
+                  <CountTable title="Follow-up distribution (secured only)" rows={followUpDist} />
+                  <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "10px 14px" }}>
+                    <div style={{ fontSize: 11, color: COLORS.inkFaint, marginBottom: 8 }}>Averages</div>
+                    <div style={{ fontSize: 12, color: COLORS.ink, marginBottom: 4 }}>Attractiveness — secured: {avgAttrSecured} · not secured: {avgAttrNot}</div>
+                    <div style={{ fontSize: 12, color: COLORS.ink }}>Overall rating — secured: {avgRatingSecured} · not secured: {avgRatingNot}</div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {tab === "roster" && (
+          <div style={{ padding: 20 }}>
+            <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+              {[{ id: "all", label: "All" }, { id: "smashed", label: "Smashed" }].map((f) => (
+                <button key={f.id} onClick={() => setRosterFilter(f.id)} style={{ ...toggleBtn, flex: 1, fontSize: 12, padding: "8px", ...(rosterFilter === f.id ? toggleBtnActive : {}) }}>{f.label}</button>
+              ))}
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+                <span style={monoLabel}>ROSTER (3 SLOTS)</span>
+                <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 13, color: overCap ? COLORS.warn : COLORS.ink, fontWeight: 600 }}>{liveCapped.length} / {ROSTER_CAP}</span>
+              </div>
+              <div style={{ display: "flex", gap: 4 }}>
+                {Array.from({ length: Math.max(ROSTER_CAP, liveCapped.length) }).map((_, i) => (
+                  <div key={i} style={{ flex: 1, height: 8, borderRadius: 4, background: i < liveCapped.length ? (overCap && i >= ROSTER_CAP ? COLORS.warn : "#8a8f5c") : COLORS.surface2 }} />
+                ))}
+              </div>
+              {overCap && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, color: COLORS.warn, fontSize: 12 }}>
+                  <AlertTriangle size={14} /> Over your cap — {liveCapped.length - ROSTER_CAP} more than your rule of 3. Drop one before adding another.
+                </div>
+              )}
+            </div>
+
+            {roster.length === 0 && <EmptyState text="No one on the roster yet. Add someone to start tracking." />}
+
+            {(() => {
+              if (rosterFilter === "all") {
+                return liveCapped.length > 0 ? (
+                  <SectionList label="ROSTER" people={liveCapped} approaches={approaches} expanded={expanded} setExpanded={setExpanded} setEditPerson={setEditPerson} deletePerson={deletePerson} noteDraft={noteDraft} setNoteDraft={setNoteDraft} addNote={addNote} deleteNote={deleteNote} />
+                ) : null;
+              }
+              const archive = roster.filter((p) => p.smashed || (p.status !== "active" && p.status !== "warming"));
+              return archive.length > 0 ? (
+                <SectionList label="SMASHED" people={archive} approaches={approaches} expanded={expanded} setExpanded={setExpanded} setEditPerson={setEditPerson} deletePerson={deletePerson} noteDraft={noteDraft} setNoteDraft={setNoteDraft} addNote={addNote} deleteNote={deleteNote} />
+              ) : (
+                <EmptyState text="Nothing in the archive yet." />
+              );
+            })()}
+
+            {roster.length > 0 && <button onClick={exportRoster} style={{ ...btnGhost, marginTop: 16 }}><Download size={13} /> Export CSV</button>}
+          </div>
+        )}
+
+        {tab === "approaches" && (
+          <ApproachesTab
+            approaches={approaches} roster={roster}
+            onEdit={setEditApproach} onDelete={deleteApproach} onUpdate={updateApproach}
+            onAddToRoster={addToRoster}
+            confirmReset={confirmReset} setConfirmReset={setConfirmReset} onReset={resetApproaches}
+            onExport={exportApproaches}
+          />
+        )}
+      </div>
+
+      {tab !== "overview" && (
+        <button onClick={() => (tab === "roster" ? setAddPersonDraft({}) : setShowAddApproach(true))} style={fab}>
+          <Plus size={24} color="#171210" />
+        </button>
+      )}
+
+      {addPersonDraft !== null && <PersonForm title="Add to roster" initial={addPersonDraft} approaches={approaches} onSave={addPerson} onClose={() => setAddPersonDraft(null)} />}
+      {editPerson && <PersonForm title="Edit" initial={editPerson} approaches={approaches} onSave={(data) => { updatePerson(editPerson.id, data); setEditPerson(null); }} onClose={() => setEditPerson(null)} />}
+      {showAddApproach && <ApproachForm title="Log approach" onSave={addApproach} onClose={() => setShowAddApproach(false)} />}
+      {editApproach && <ApproachForm title="Edit approach" initial={editApproach} onSave={(data) => { updateApproach(editApproach.id, data); setEditApproach(null); }} onClose={() => setEditApproach(null)} />}
+    </div>
+  );
+}
+
+function BreakdownTable({ title, rows }) {
+  if (!rows || !rows.length) return null;
+  const sorted = [...rows].sort((a, b) => b.rate - a.rate);
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "10px 14px" }}>
+      <div style={{ fontSize: 11, color: COLORS.inkFaint, marginBottom: 8 }}>{title}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {sorted.map((r) => {
+          const lowN = r.count < 5;
+          return (
+            <div key={r.name} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, opacity: lowN ? 0.6 : 1 }}>
+              <span style={{ color: COLORS.ink }}>{r.name}</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                {lowN && <span style={{ fontSize: 10, fontFamily: "JetBrains Mono, monospace", color: COLORS.warn, border: `1px solid ${COLORS.warn}`, borderRadius: 4, padding: "0 4px" }}>LOW N</span>}
+                <span style={{ color: COLORS.inkMuted, fontFamily: "JetBrains Mono, monospace" }}>{r.rate}% (n={r.count})</span>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function CountTable({ title, rows }) {
+  if (!rows || !rows.length) return null;
+  const total = rows.reduce((s, r) => s + r.count, 0);
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "10px 14px" }}>
+      <div style={{ fontSize: 11, color: COLORS.inkFaint, marginBottom: 8 }}>{title}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {rows.map((r) => (
+          <div key={r.name} style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+            <span style={{ color: COLORS.ink }}>{r.name}</span>
+            <span style={{ color: COLORS.inkMuted, fontFamily: "JetBrains Mono, monospace" }}>{r.count} ({total ? Math.round((r.count / total) * 100) : 0}%)</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function StatCard({ label, value, warn }) {
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${warn ? COLORS.warn : COLORS.border}`, borderRadius: 10, padding: "12px 14px", minWidth: 110, flex: "1 1 auto" }}>
+      <div style={{ fontSize: 11, color: COLORS.inkFaint, marginBottom: 4 }}>{label}</div>
+      <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 18, fontWeight: 700, color: warn ? COLORS.warn : COLORS.ink }}>{value}</div>
+    </div>
+  );
+}
+
+function EmptyState({ text }) { return <div style={{ textAlign: "center", padding: "40px 0", color: COLORS.inkFaint, fontSize: 14 }}>{text}</div>; }
+
+function SectionList({ label, people, approaches, expanded, setExpanded, setEditPerson, deletePerson, noteDraft, setNoteDraft, addNote, deleteNote }) {
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={monoLabel}>{label}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 8 }}>
+        {people.map((p) => (
+          <PersonCard key={p.id} person={p} approaches={approaches} expanded={expanded === p.id} onToggle={() => setExpanded(expanded === p.id ? null : p.id)}
+            onEdit={() => setEditPerson(p)} onDelete={() => deletePerson(p.id)}
+            noteDraft={noteDraft[p.id] || ""} setNoteDraft={(v) => setNoteDraft((d) => ({ ...d, [p.id]: v }))}
+            onAddNote={() => addNote(p.id)} onDeleteNote={(nid) => deleteNote(p.id, nid)} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PersonCard({ person, approaches, expanded, onToggle, onEdit, onDelete, noteDraft, setNoteDraft, onAddNote, onDeleteNote }) {
+  const s = STATUS[person.status] || STATUS.active;
+  const ch = CHANNEL[person.channel] || null;
+  const ChIcon = ch ? ch.icon : null;
+  const stale = person.status !== "closed" && person.status !== "inactive" && daysSince(person.lastContact) > STALE_DAYS;
+  const origin = person.sourceApproachId ? (approaches || []).find((a) => a.id === person.sourceApproachId) : null;
+
+  const daysLeft = person.leaveDate ? -daysSince(person.leaveDate) : null;
+  const leaving = daysLeft !== null && daysLeft >= 0 && person.status !== "closed" && person.status !== "inactive";
+  const leaveColor = leaving && daysLeft <= 7 ? COLORS.warn : COLORS.gold;
+
+  const daysUntilReturn = person.returnDate ? -daysSince(person.returnDate) : null;
+  const returning = person.status === "inactive" && daysUntilReturn !== null && daysUntilReturn >= 0;
+
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${stale ? COLORS.warn : COLORS.border}`, borderRadius: 10, overflow: "hidden" }}>
+      <div style={{ padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }} onClick={onToggle}>
+        <span style={{ width: 8, height: 8, borderRadius: "50%", background: s.color, flexShrink: 0 }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontFamily: "Fraunces, serif", fontSize: 17, color: COLORS.ink, fontWeight: 600 }}>{person.name}</span>
+            {person.ownPlace === "yes" && <Home size={12} color={COLORS.inkMuted} />}
+            {person.smashed && <span style={{ fontSize: 10, fontFamily: "JetBrains Mono, monospace", padding: "1px 6px", borderRadius: 5, background: "rgba(138,63,74,0.2)", color: "#c97f8a" }}>SMASHED</span>}
+          </div>
+          <div style={{ fontSize: 12, color: COLORS.inkMuted, marginTop: 2, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            <span>{s.label} · last contact {fmtDate(person.lastContact)}</span>
+            {ChIcon && <ChIcon size={11} color={COLORS.inkFaint} />}
+          </div>
+          {stale && <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 4, color: COLORS.warn, fontSize: 11 }}><AlertTriangle size={11} /> {daysSince(person.lastContact)} days since contact — reach out</div>}
+          {leaving && <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 4, color: leaveColor, fontSize: 11 }}><Clock size={11} /> {daysLeft === 0 ? "Leaving today" : `${daysLeft} day${daysLeft === 1 ? "" : "s"} left before she's gone`}</div>}
+          {returning && <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 4, color: COLORS.gold, fontSize: 11 }}><Clock size={11} /> {daysUntilReturn === 0 ? "Back today" : `Back in ${daysUntilReturn} day${daysUntilReturn === 1 ? "" : "s"}`}</div>}
+        </div>
+        {expanded ? <ChevronUp size={18} color={COLORS.inkFaint} /> : <ChevronDown size={18} color={COLORS.inkFaint} />}
+      </div>
+      {expanded && (
+        <div style={{ padding: "0 16px 16px", borderTop: `1px solid ${COLORS.border}` }}>
+          {origin && <div style={{ marginTop: 12, fontSize: 12, color: COLORS.inkMuted, display: "flex", alignItems: "center", gap: 5 }}><Link2 size={12} color={COLORS.inkFaint} /> From 100 Run · {fmtDate(origin.date)} · {labelFor(VENUE_TYPES, origin.venueType)}</div>}
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <button onClick={onEdit} style={btnGhost}><Pencil size={13} /> Edit</button>
+            <button onClick={onDelete} style={{ ...btnGhost, color: "#b0512e" }}><Trash2 size={13} /> Remove</button>
+          </div>
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontSize: 11, fontFamily: "JetBrains Mono, monospace", color: COLORS.inkFaint, letterSpacing: 1, marginBottom: 8 }}>NOTES</div>
+            <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+              <input value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && onAddNote()} placeholder="Add a note..." style={inputStyle} />
+              <button onClick={onAddNote} style={{ ...btnGhost, padding: "8px 12px" }}>Add</button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 200, overflowY: "auto" }}>
+              {person.notes.length === 0 && <div style={{ fontSize: 12, color: COLORS.inkFaint }}>No notes yet.</div>}
+              {person.notes.map((n) => (
+                <div key={n.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 13, color: COLORS.ink }}>
+                  <div><span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: COLORS.inkFaint, marginRight: 6 }}>{fmtDate(n.date)}</span>{n.text}</div>
+                  <button onClick={() => onDeleteNote(n.id)} style={{ background: "none", border: "none", cursor: "pointer", flexShrink: 0 }}><X size={13} color={COLORS.inkFaint} /></button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ApproachesTab({ approaches, roster, onEdit, onDelete, onUpdate, onAddToRoster, confirmReset, setConfirmReset, onReset, onExport }) {
+  const [filter, setFilter] = useState("all");
+  const total = approaches.length;
+
+  const filtered = approaches.filter((e) => {
+    if (filter === "all") return true;
+    const d = daysSince(e.date);
+    if (filter === "7") return d <= 6;
+    if (filter === "30") return d <= 29;
+    return true;
+  });
+
+  const securedCount = filtered.filter(isSecured).length;
+  const securedRate = filtered.length ? Math.round((securedCount / filtered.length) * 100) : 0;
+
+  const byVenue = groupRate(filtered, (e) => labelFor(VENUE_TYPES, e.venueType));
+  const byInterest = groupRate(filtered, (e) => labelFor(INITIAL_INTEREST, e.initialInterest));
+  const byEthnicity = groupRate(filtered, (e) => labelFor(ETHNICITIES, e.ethnicity, e.ethnicityCustom));
+  const byOpener = groupRate(filtered, (e) => labelFor(OPENERS, e.opener, e.openerCustom));
+
+  const followUpData = (() => {
+    const groups = {};
+    filtered.filter(isSecured).forEach((e) => { const k = labelFor(FOLLOWUPS, e.followUp || "pending"); groups[k] = (groups[k] || 0) + 1; });
+    return Object.entries(groups).map(([name, value]) => ({ name, value }));
+  })();
+
+  const scatterSecured = filtered.filter(isSecured).map((e) => ({ x: e.attractiveness, y: e.overallRating }));
+  const scatterNot = filtered.filter((e) => !isSecured(e)).map((e) => ({ x: e.attractiveness, y: e.overallRating }));
+
+  const byNight = (() => {
+    const groups = {};
+    filtered.forEach((e) => {
+      if (!groups[e.date]) groups[e.date] = { date: e.date, count: 0, secured: 0, venues: new Set() };
+      groups[e.date].count += 1;
+      if (isSecured(e)) groups[e.date].secured += 1;
+      groups[e.date].venues.add(labelFor(VENUE_TYPES, e.venueType));
+    });
+    return Object.values(groups).sort((a, b) => (a.date < b.date ? 1 : -1));
+  })();
+
+  const auditioning = filtered.filter((e) => isSecured(e) && (e.followUp || "pending") === "still_talking");
+  const securedAll = filtered.filter(isSecured);
+  const rosterIdsLinked = new Set(roster.map((p) => p.sourceApproachId).filter(Boolean));
+
+  return (
+    <div style={{ padding: 20 }}>
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+          <span style={monoLabel}>100 APPROACH RUN</span>
+          <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 20, fontWeight: 700, color: COLORS.ink }}>{String(total).padStart(3, "0")}/100</span>
+        </div>
+        <div style={{ height: 8, borderRadius: 4, background: COLORS.surface2, overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${Math.min(100, (total / 100) * 100)}%`, background: COLORS.gold }} />
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+        {[{ id: "all", label: "All time" }, { id: "7", label: "Last 7 days" }, { id: "30", label: "Last 30 days" }].map((f) => (
+          <button key={f.id} onClick={() => setFilter(f.id)} style={{ ...toggleBtn, flex: 1, fontSize: 12, padding: "8px", ...(filter === f.id ? toggleBtnActive : {}) }}>{f.label}</button>
+        ))}
+      </div>
+      <div style={{ fontSize: 12, color: COLORS.inkMuted, marginBottom: 20 }}>{securedCount} secured · {securedRate}% secured rate ({filtered.length} entries in view)</div>
+
+      {total === 0 && <EmptyState text="No approaches logged yet. Add one to start the run." />}
+      {total > 0 && filtered.length === 0 && <EmptyState text="No entries in this window." />}
+
+      {byNight.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={monoLabel}>BY NIGHT</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+            {byNight.map((n) => (
+              <div key={n.date} style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: COLORS.inkFaint }}>{fmtDate(n.date)}</div>
+                  <div style={{ fontSize: 12, color: COLORS.inkMuted, marginTop: 2 }}>{[...n.venues].join(", ")}</div>
+                </div>
+                <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: COLORS.ink }}>{n.count} approached · {n.secured} secured</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {auditioning.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={monoLabel}>AUDITIONING (STILL TALKING)</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+            {auditioning.map((e) => {
+              const already = rosterIdsLinked.has(e.id);
+              return (
+                <div key={e.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "10px 14px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <div style={{ fontFamily: "Fraunces, serif", fontSize: 15, color: COLORS.ink, fontWeight: 600 }}>{e.name || "Unnamed"}</div>
+                      <div style={{ fontSize: 12, color: COLORS.inkMuted }}>{fmtDate(e.date)} · {labelFor(VENUE_TYPES, e.venueType)} · {labelFor(ETHNICITIES, e.ethnicity, e.ethnicityCustom)}</div>
+                    </div>
+                    {already ? (
+                      <span style={{ fontSize: 11, color: COLORS.inkFaint, display: "flex", alignItems: "center", gap: 4 }}><Link2 size={12} /> On roster</span>
+                    ) : (
+                      <button onClick={() => onAddToRoster(e)} style={{ ...btnGhost, color: COLORS.gold, borderColor: COLORS.gold }}><UserPlus size={13} /> Add to roster</button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {securedAll.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={monoLabel}>FOLLOW-UP BOARD</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 8 }}>
+            {FOLLOWUPS.map((f) => {
+              const group = securedAll.filter((e) => (e.followUp || "pending") === f.id);
+              if (group.length === 0) return null;
+              return (
+                <div key={f.id}>
+                  <div style={{ fontSize: 11, color: COLORS.inkFaint, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
+                    {f.label} <span style={{ fontFamily: "JetBrains Mono, monospace" }}>({group.length})</span>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {group.map((e) => (
+                      <div key={e.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 13, color: COLORS.ink, fontWeight: 600 }}>{e.name || "Unnamed"}</div>
+                          <div style={{ fontSize: 11, color: COLORS.inkMuted }}>{fmtDate(e.date)} · {labelFor(VENUE_TYPES, e.venueType)}</div>
+                        </div>
+                        <select value={e.followUp || "pending"} onChange={(ev) => onUpdate(e.id, { followUp: ev.target.value })} style={{ ...inputStyle, width: "auto", padding: "4px 8px", fontSize: 12 }}>
+                          {FOLLOWUPS.map((ff) => <option key={ff.id} value={ff.id}>{ff.label}</option>)}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {filtered.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 18, marginBottom: 24 }}>
+          <ChartCard title="Secured rate by venue"><RateBarChart data={byVenue} /></ChartCard>
+          <ChartCard title="Secured rate by initial interest"><RateBarChart data={byInterest} /></ChartCard>
+          <ChartCard title="Secured rate by ethnicity"><RateBarChart data={byEthnicity} /></ChartCard>
+          <ChartCard title="Secured rate by opener"><RateBarChart data={byOpener} /></ChartCard>
+          {followUpData.length > 0 && (
+            <ChartCard title="Follow-up outcome breakdown">
+              <ResponsiveContainer width="100%" height={210}>
+                <PieChart>
+                  <Pie data={followUpData} dataKey="value" nameKey="name" outerRadius={68} label={{ fontSize: 11, fill: COLORS.ink }}>
+                    {followUpData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Legend wrapperStyle={{ fontSize: 11, color: COLORS.inkMuted }} />
+                </PieChart>
+              </ResponsiveContainer>
+            </ChartCard>
+          )}
+          <ChartCard title="Attractiveness vs. overall rating">
+            <ResponsiveContainer width="100%" height={210}>
+              <ScatterChart margin={{ top: 10, right: 10, bottom: 5, left: -10 }}>
+                <CartesianGrid stroke={COLORS.border} strokeDasharray="3 3" />
+                <XAxis type="number" dataKey="x" name="Attractiveness" domain={[0, 10]} stroke={COLORS.inkFaint} fontSize={11} tickLine={false} axisLine={{ stroke: COLORS.border }} />
+                <YAxis type="number" dataKey="y" name="Overall rating" domain={[0, 10]} stroke={COLORS.inkFaint} fontSize={11} tickLine={false} axisLine={false} />
+                <Tooltip contentStyle={tooltipStyle} cursor={{ strokeDasharray: "3 3" }} />
+                <Scatter name="Secured" data={scatterSecured} fill={COLORS.gold} />
+                <Scatter name="Not secured" data={scatterNot} fill={COLORS.inkFaint} />
+              </ScatterChart>
+            </ResponsiveContainer>
+            <div style={{ fontSize: 11, color: COLORS.inkFaint, marginTop: 4 }}>x = attractiveness (1–10) · y = overall rating (1–10) · gold = secured</div>
+          </ChartCard>
+        </div>
+      )}
+
+      {filtered.length > 0 && (
+        <>
+          <div style={monoLabel}>ENTRIES</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 8 }}>
+            {filtered.map((e) => (
+              <ApproachRow key={e.id} entry={e} roster={roster} onEdit={() => onEdit(e)} onDelete={() => onDelete(e.id)} onUpdate={(patch) => onUpdate(e.id, patch)} />
+            ))}
+          </div>
+        </>
+      )}
+
+      {total > 0 && <button onClick={onExport} style={{ ...btnGhost, marginTop: 16 }}><Download size={13} /> Export CSV</button>}
+
+      <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${COLORS.border}` }}>
+        {!confirmReset ? (
+          <button onClick={() => setConfirmReset(true)} style={{ ...btnGhost, color: COLORS.inkFaint }}><RotateCcw size={13} /> Reset run</button>
+        ) : (
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12, color: COLORS.warn }}>Wipe all {total} entries?</span>
+            <button onClick={onReset} style={{ ...btnGhost, color: COLORS.warn, borderColor: COLORS.warn }}>Yes, wipe it</button>
+            <button onClick={() => setConfirmReset(false)} style={btnGhost}>Cancel</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ChartCard({ title, children }) {
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "14px 12px 8px" }}>
+      <div style={{ fontSize: 12, color: COLORS.inkMuted, marginBottom: 6, paddingLeft: 4 }}>{title}</div>
+      {children}
+    </div>
+  );
+}
+
+function RateBarChart({ data }) {
+  if (!data.length) return <div style={{ fontSize: 12, color: COLORS.inkFaint, padding: "8px 4px" }}>No data yet.</div>;
+  return (
+    <ResponsiveContainer width="100%" height={170}>
+      <BarChart data={data} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
+        <CartesianGrid stroke={COLORS.border} strokeDasharray="3 3" vertical={false} />
+        <XAxis dataKey="name" stroke={COLORS.inkFaint} fontSize={11} tickLine={false} axisLine={{ stroke: COLORS.border }} />
+        <YAxis stroke={COLORS.inkFaint} fontSize={11} tickLine={false} axisLine={false} domain={[0, 100]} unit="%" />
+        <Tooltip contentStyle={tooltipStyle} formatter={(v, n, p) => [`${v}% (n=${p.payload.count})`, "secured"]} />
+        <Bar dataKey="rate" fill={COLORS.gold} radius={[4, 4, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+const tooltipStyle = { background: COLORS.surface2, border: `1px solid ${COLORS.border}`, borderRadius: 8, fontSize: 12, color: COLORS.ink };
+
+function ApproachRow({ entry, roster, onEdit, onDelete, onUpdate }) {
+  const secured = isSecured(entry);
+  const linkedPerson = (roster || []).find((p) => p.sourceApproachId === entry.id);
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "12px 14px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: COLORS.inkFaint }}>{fmtDate(entry.date)}</div>
+          {entry.name && <div style={{ fontFamily: "Fraunces, serif", fontSize: 14, color: COLORS.ink, fontWeight: 600, marginTop: 2 }}>{entry.name}</div>}
+          <div style={{ fontSize: 13, color: COLORS.ink, marginTop: 2 }}>{labelFor(VENUE_TYPES, entry.venueType)} · {labelFor(ETHNICITIES, entry.ethnicity, entry.ethnicityCustom)}</div>
+          <div style={{ fontSize: 12, color: COLORS.inkMuted, marginTop: 2 }}>Interest: {labelFor(INITIAL_INTEREST, entry.initialInterest)} · Attr {entry.attractiveness}/10 · Rating {entry.overallRating}/10</div>
+          <div style={{ fontSize: 12, color: COLORS.inkMuted, marginTop: 2 }}>Opener: {labelFor(OPENERS, entry.opener, entry.openerCustom)}</div>
+          <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+            <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: 11, fontFamily: "JetBrains Mono, monospace", background: secured ? "rgba(201,154,62,0.15)" : COLORS.surface2, color: secured ? COLORS.gold : COLORS.inkFaint }}>
+              {labelFor(OUTCOMES, entry.outcome, entry.outcomeCustom)}
+            </span>
+            {entry.makeOut && <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: 11, fontFamily: "JetBrains Mono, monospace", background: "rgba(138,63,74,0.2)", color: "#c97f8a" }}>MAKEOUT</span>}
+            {entry.hadSexSameNight && <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: 11, fontFamily: "JetBrains Mono, monospace", background: "rgba(138,63,74,0.2)", color: "#c97f8a" }}>SAME-NIGHT</span>}
+          </div>
+          {linkedPerson && <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 6, fontSize: 11, color: COLORS.inkMuted }}><Link2 size={11} color={COLORS.inkFaint} /> → Roster: {linkedPerson.name}</div>}
+        </div>
+        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+          <button onClick={onEdit} style={iconBtn}><Pencil size={14} color={COLORS.inkFaint} /></button>
+          <button onClick={onDelete} style={iconBtn}><Trash2 size={14} color={COLORS.inkFaint} /></button>
+        </div>
+      </div>
+      {secured && (
+        <div style={{ marginTop: 10 }}>
+          <label style={{ fontSize: 10, fontFamily: "JetBrains Mono, monospace", color: COLORS.inkFaint, letterSpacing: 1 }}>FOLLOW-UP</label>
+          <select value={entry.followUp || "pending"} onChange={(e) => onUpdate({ followUp: e.target.value })} style={{ ...inputStyle, marginTop: 4, padding: "6px 10px", fontSize: 13 }}>
+            {FOLLOWUPS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+          </select>
+        </div>
+      )}
+      {entry.notes && <div style={{ fontSize: 13, color: COLORS.ink, marginTop: 8 }}>{entry.notes}</div>}
+    </div>
+  );
+}
+
+function ApproachForm({ title, initial, onSave, onClose }) {
+  const [date, setDate] = useState(initial?.date || todayISO());
+  const [name, setName] = useState(initial?.name || "");
+  const [venueType, setVenueType] = useState(initial?.venueType || "bar");
+  const [ethnicity, setEthnicity] = useState(initial?.ethnicity || "white");
+  const [ethnicityCustom, setEthnicityCustom] = useState(initial?.ethnicityCustom || "");
+  const [initialInterest, setInitialInterest] = useState(initial?.initialInterest || "high");
+  const [makeOut, setMakeOut] = useState(initial?.makeOut ?? false);
+  const [hadSexSameNight, setHadSexSameNight] = useState(initial?.hadSexSameNight ?? false);
+  const [opener, setOpener] = useState(initial?.opener || "direct");
+  const [openerCustom, setOpenerCustom] = useState(initial?.openerCustom || "");
+  const [outcome, setOutcome] = useState(initial?.outcome || "nothing");
+  const [outcomeCustom, setOutcomeCustom] = useState(initial?.outcomeCustom || "");
+  const [attractiveness, setAttractiveness] = useState(initial?.attractiveness ?? 5);
+  const [overallRating, setOverallRating] = useState(initial?.overallRating ?? 5);
+  const [notes, setNotes] = useState(initial?.notes || "");
+
+  return (
+    <Sheet title={title} onClose={onClose}>
+      <Field label="Date"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={inputStyle} /></Field>
+      <Field label="Name (if known)"><input value={name} onChange={(e) => setName(e.target.value)} style={inputStyle} placeholder="Optional" /></Field>
+      <Field label="Where">
+        <select value={venueType} onChange={(e) => setVenueType(e.target.value)} style={inputStyle}>{VENUE_TYPES.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}</select>
+      </Field>
+      <Field label="Ethnicity">
+        <select value={ethnicity} onChange={(e) => setEthnicity(e.target.value)} style={inputStyle}>{ETHNICITIES.map((e) => <option key={e.id} value={e.id}>{e.label}</option>)}</select>
+        {ethnicity === "other" && <input value={ethnicityCustom} onChange={(e) => setEthnicityCustom(e.target.value)} placeholder="Specify..." style={{ ...inputStyle, marginTop: 8 }} />}
+      </Field>
+      <Field label="Initial interest"><SegToggle options={INITIAL_INTEREST} value={initialInterest} onChange={setInitialInterest} /></Field>
+      <Field label="Made out same night?">
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" onClick={() => setMakeOut(true)} style={{ ...toggleBtn, ...(makeOut ? toggleBtnActive : {}) }}>Yes</button>
+          <button type="button" onClick={() => setMakeOut(false)} style={{ ...toggleBtn, ...(!makeOut ? toggleBtnActive : {}) }}>No</button>
+        </div>
+      </Field>
+      <Field label="Had sex same night?">
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" onClick={() => setHadSexSameNight(true)} style={{ ...toggleBtn, ...(hadSexSameNight ? toggleBtnActive : {}) }}>Yes</button>
+          <button type="button" onClick={() => setHadSexSameNight(false)} style={{ ...toggleBtn, ...(!hadSexSameNight ? toggleBtnActive : {}) }}>No</button>
+        </div>
+      </Field>
+      <Field label="Opener used">
+        <select value={opener} onChange={(e) => setOpener(e.target.value)} style={inputStyle}>{OPENERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</select>
+        {opener === "other" && <input value={openerCustom} onChange={(e) => setOpenerCustom(e.target.value)} placeholder="Specify..." style={{ ...inputStyle, marginTop: 8 }} />}
+      </Field>
+      <Field label="Outcome">
+        <select value={outcome} onChange={(e) => setOutcome(e.target.value)} style={inputStyle}>{OUTCOMES.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</select>
+        {outcome === "other" && <input value={outcomeCustom} onChange={(e) => setOutcomeCustom(e.target.value)} placeholder="Specify..." style={{ ...inputStyle, marginTop: 8 }} />}
+      </Field>
+      <Field label={`Attractiveness: ${attractiveness}/10`}><input type="range" min="1" max="10" value={attractiveness} onChange={(e) => setAttractiveness(Number(e.target.value))} style={{ width: "100%" }} /></Field>
+      <Field label={`Overall interaction rating: ${overallRating}/10`}><input type="range" min="1" max="10" value={overallRating} onChange={(e) => setOverallRating(Number(e.target.value))} style={{ width: "100%" }} /></Field>
+      <Field label="Notes"><textarea value={notes} onChange={(e) => setNotes(e.target.value)} style={{ ...inputStyle, minHeight: 70, resize: "none" }} placeholder="Context, what happened..." /></Field>
+      <button onClick={() => onSave({ date, name: name.trim(), venueType, ethnicity, ethnicityCustom, initialInterest, makeOut, hadSexSameNight, opener, openerCustom, outcome, outcomeCustom, attractiveness, overallRating, notes: notes.trim() })} style={btnSolid}>Save</button>
+    </Sheet>
+  );
+}
+
+function SegToggle({ options, value, onChange }) {
+  return (
+    <div style={{ display: "flex", gap: 8 }}>
+      {options.map((o) => <button key={o.id} type="button" onClick={() => onChange(o.id)} style={{ ...toggleBtn, ...(value === o.id ? toggleBtnActive : {}) }}>{o.label}</button>)}
+    </div>
+  );
+}
+
+function PersonForm({ title, initial, approaches, onSave, onClose }) {
+  const [name, setName] = useState(initial?.name || "");
+  const [status, setStatus] = useState(initial?.status || "active");
+  const [ownPlace, setOwnPlace] = useState(initial?.ownPlace ?? "unknown");
+  const [smashed, setSmashed] = useState(initial?.smashed ?? false);
+  const [channel, setChannel] = useState(initial?.channel || "bars");
+  const [phone, setPhone] = useState(initial?.phone || "");
+  const [sourceApproachId, setSourceApproachId] = useState(initial?.sourceApproachId || "");
+  const [leaveDate, setLeaveDate] = useState(initial?.leaveDate || "");
+  const [returnDate, setReturnDate] = useState(initial?.returnDate || "");
+
+  const securedApproaches = (approaches || []).filter(isSecured).slice().sort((a, b) => (a.date < b.date ? 1 : -1));
+
+  return (
+    <Sheet title={title} onClose={onClose}>
+      <Field label="Name"><input value={name} onChange={(e) => setName(e.target.value)} style={inputStyle} placeholder="Name" /></Field>
+      <Field label="Phone number (optional)"><input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} style={inputStyle} placeholder="(555) 555-5555" /></Field>
+      <Field label="Status"><select value={status} onChange={(e) => setStatus(e.target.value)} style={inputStyle}>{STATUS_ORDER.map((s) => <option key={s} value={s}>{STATUS[s].label}</option>)}</select></Field>
+      <Field label="Has her own place or can host?">
+        <SegToggle options={OWN_PLACE} value={ownPlace} onChange={setOwnPlace} />
+      </Field>
+      <Field label="Smashed?">
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" onClick={() => setSmashed(true)} style={{ ...toggleBtn, ...(smashed ? toggleBtnActive : {}) }}>Yes</button>
+          <button type="button" onClick={() => setSmashed(false)} style={{ ...toggleBtn, ...(!smashed ? toggleBtnActive : {}) }}>No</button>
+        </div>
+      </Field>
+      <Field label="Found via"><select value={channel} onChange={(e) => setChannel(e.target.value)} style={inputStyle}>{CHANNEL_ORDER.map((c) => <option key={c} value={c}>{CHANNEL[c].label}</option>)}</select></Field>
+      {securedApproaches.length > 0 && (
+        <Field label="Originated from approach (optional)">
+          <select value={sourceApproachId} onChange={(e) => setSourceApproachId(e.target.value)} style={inputStyle}>
+            <option value="">— None / met independently —</option>
+            {securedApproaches.map((a) => <option key={a.id} value={a.id}>{fmtDate(a.date)} · {a.name ? a.name + " · " : ""}{labelFor(VENUE_TYPES, a.venueType)} · {labelFor(OUTCOMES, a.outcome, a.outcomeCustom)}</option>)}
+          </select>
+        </Field>
+      )}
+      <Field label="Leaving on (optional — for summer/temporary leads)"><input type="date" value={leaveDate} onChange={(e) => setLeaveDate(e.target.value)} style={inputStyle} /></Field>
+      {status === "inactive" && (
+        <Field label="Returns around (optional)"><input type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} style={inputStyle} /></Field>
+      )}
+      <button disabled={!name.trim()} onClick={() => name.trim() && onSave({ name: name.trim(), status, ownPlace, smashed, channel, phone: phone.trim() || null, sourceApproachId: sourceApproachId || null, leaveDate: leaveDate || null, returnDate: returnDate || null })} style={{ ...btnSolid, opacity: name.trim() ? 1 : 0.5 }}>Save</button>
+    </Sheet>
+  );
+}
+
+function Sheet({ title, children, onClose }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "flex-end", zIndex: 50 }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.surface, width: "100%", maxWidth: 480, margin: "0 auto", borderRadius: "16px 16px 0 0", padding: 20, maxHeight: "85vh", overflowY: "auto", borderTop: `1px solid ${COLORS.border}` }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <h2 style={{ fontFamily: "Fraunces, serif", fontSize: 20, color: COLORS.ink, margin: 0 }}>{title}</h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer" }}><X size={20} color={COLORS.inkFaint} /></button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <div style={{ marginBottom: 14, flex: 1 }}>
+      <label style={{ display: "block", fontSize: 11, fontFamily: "JetBrains Mono, monospace", letterSpacing: 1, color: COLORS.inkFaint, marginBottom: 6 }}>{label.toUpperCase()}</label>
+      {children}
+    </div>
+  );
+}
+
+const monoLabel = { fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: 1.5, color: COLORS.inkFaint };
+const inputStyle = { width: "100%", background: COLORS.surface2, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "10px 12px", color: COLORS.ink, fontSize: 14, outline: "none" };
+const btnGhost = { display: "flex", alignItems: "center", gap: 5, background: "none", border: `1px solid ${COLORS.border}`, borderRadius: 7, padding: "6px 10px", fontSize: 12, color: COLORS.inkMuted, cursor: "pointer" };
+const iconBtn = { background: "none", border: "none", cursor: "pointer", padding: 4 };
+const btnSolid = { width: "100%", background: COLORS.gold, border: "none", borderRadius: 8, padding: "12px", fontSize: 14, fontWeight: 600, color: "#171210", cursor: "pointer", marginTop: 4 };
+const toggleBtn = { flex: 1, background: COLORS.surface2, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "10px", fontSize: 13, color: COLORS.inkMuted, cursor: "pointer" };
+const toggleBtnActive = { background: COLORS.gold, color: "#171210", borderColor: COLORS.gold, fontWeight: 600 };
+const fab = { position: "fixed", bottom: 24, right: 20, width: 52, height: 52, borderRadius: "50%", background: COLORS.gold, border: "none", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 14px rgba(0,0,0,0.4)", cursor: "pointer" };
+
+
+createRoot(document.getElementById("root")).render(<RosterTracker />);
+
+</script>
+</body>
+</html>
