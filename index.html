@@ -15,6 +15,18 @@
 <body>
 <div id="root"></div>
 
+<!--
+  ============================================================
+  CLOUD SYNC SETUP (one-time, free):
+  1. Go to https://console.firebase.google.com
+  2. Create a project (free "Spark" plan, no card needed)
+  3. Build > Firestore Database > Create database > Start in TEST MODE
+  4. Project settings (gear icon) > General > scroll to "Your apps" > Web app (</>) > register app
+  5. Copy the config object it gives you and paste it below, replacing FIREBASE_CONFIG
+  Without this step, the app still works fine using only local browser storage —
+  cloud sync just won't be active until you fill this in.
+  ============================================================
+-->
 <script type="importmap">
 {
   "imports": {
@@ -41,6 +53,9 @@ import {
   ScatterChart, Scatter, PieChart, Pie, Cell, Legend, LineChart, Line,
 } from "recharts";
 
+  // Cloud sync is disabled — no Firebase project configured.
+// To enable it later: create a free Firebase project, add Firestore,
+// then reintroduce the firebase imports and config here.
 const CLOUD_ENABLED = false;
 let db = null;
 
@@ -72,7 +87,7 @@ const OPENERS = [
 const OUTCOMES = [
   { id: "nothing", label: "Nothing" }, { id: "number", label: "Number" },
   { id: "instagram", label: "Instagram" }, { id: "number_ig", label: "Number + Instagram" },
-  { id: "instant_date", label: "Instant date set" }, { id: "had_sex", label: "Had sex" }, { id: "other", label: "Other" },
+  { id: "instant_date", label: "Instant date set" }, { id: "other", label: "Other" },
 ];
 const FOLLOWUPS = [
   { id: "pending", label: "Pending" }, { id: "no_reply", label: "No reply" },
@@ -171,7 +186,7 @@ function FieldLog() {
   const [confirmReset, setConfirmReset] = useState(false);
   const [showSync, setShowSync] = useState(false);
   const [syncCode, setSyncCode] = useState("");
-  const [syncStatus, setSyncStatus] = useState("idle");
+  const [syncStatus, setSyncStatus] = useState("idle"); // idle | syncing | synced | error
   const syncTimer = useRef(null);
 
   useEffect(() => {
@@ -185,6 +200,7 @@ function FieldLog() {
   useEffect(() => { if (loaded) safeSet("approach-log", approaches); }, [approaches, loaded]);
 
   async function saveSyncCode(code) {
+    // Cloud sync disabled — no-op placeholder for when Firebase is configured later.
     const trimmed = code.trim();
     setSyncCode(trimmed);
     await safeSet("sync-code", trimmed);
@@ -201,15 +217,13 @@ function FieldLog() {
       TimeOfNight: labelFor(TIME_OF_NIGHT, e.timeOfNight), GroupContext: labelFor(GROUP_CONTEXT, e.groupContext), PreApproachSignal: labelFor(PRE_APPROACH_SIGNAL, e.preApproachSignal),
       Ethnicity: labelFor(ETHNICITIES, e.ethnicity, e.ethnicityCustom),
       InitialInterest: labelFor(INITIAL_INTEREST, e.initialInterest), Opener: labelFor(OPENERS, e.opener, e.openerCustom),
-      MadeOutSameNight: e.makeOut ? "Yes" : "No",
+      MadeOutSameNight: e.makeOut ? "Yes" : "No", HadSexSameNight: e.hadSexSameNight ? "Yes" : "No",
       Outcome: labelFor(OUTCOMES, e.outcome, e.outcomeCustom), FollowUp: labelFor(FOLLOWUPS, e.followUp || "pending"),
-      Attractiveness: e.attractiveness, OverallRating: e.overallRating, Confidence: e.confidence || "",
-      RejectionReason: e.rejectionReason ? labelFor(REJECTION_REASONS, e.rejectionReason, e.rejectionReasonCustom) : "",
-      Notes: e.notes || "",
+      Attractiveness: e.attractiveness, OverallRating: e.overallRating, Notes: e.notes || "",
     })));
   }
 
-  const sameNightSexCount = approaches.filter((e) => e.outcome === "had_sex").length;
+  const sameNightSexCount = approaches.filter((e) => e.hadSexSameNight).length;
   const totalApproaches = approaches.length;
   const securedTotal = approaches.filter(isSecured).length;
   const securedRateTotal = totalApproaches ? Math.round((securedTotal / totalApproaches) * 100) : 0;
@@ -321,7 +335,9 @@ function FieldLog() {
             <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 600, color: COLORS.ink, margin: 0 }}>100 Run</h1>
           </div>
           <button onClick={() => setShowSync(true)} style={{ background: "none", border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: 8, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
-            <CloudOff size={16} color={COLORS.inkFaint} />
+            {CLOUD_ENABLED && syncCode ? (
+              syncStatus === "synced" ? <Cloud size={16} color={COLORS.gold} /> : <Cloud size={16} color={COLORS.inkFaint} />
+            ) : <CloudOff size={16} color={COLORS.inkFaint} />}
           </button>
         </div>
 
@@ -493,13 +509,13 @@ function SyncSheet({ syncCode, onSave, onClose, cloudEnabled, status }) {
     <Sheet title="Cloud sync" onClose={onClose}>
       {!cloudEnabled && (
         <div style={{ fontSize: 13, color: COLORS.inkMuted, marginBottom: 14, lineHeight: 1.5 }}>
-          Cloud sync isn't configured yet. A free Firebase project needs to be set up to enable it. Until then your data stays saved locally on this device only.
+          Cloud sync isn't configured yet. A free Firebase project needs to be set up and its config pasted into the FIREBASE_CONFIG section of the code. Until then your data stays saved locally on this device only.
         </div>
       )}
       {cloudEnabled && (
         <>
           <div style={{ fontSize: 13, color: COLORS.inkMuted, marginBottom: 14, lineHeight: 1.5 }}>
-            Pick a sync code (any word or phrase). Enter the same code on another device to pull in the same data.
+            Pick a sync code (any word or phrase). Enter the same code on another device to pull in the same data. Keep it private — anyone with the code can see this data.
           </div>
           <Field label="Sync code">
             <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="e.g. a private phrase" style={inputStyle} />
@@ -780,14 +796,14 @@ function ApproachRow({ entry, onEdit, onDelete, onUpdate }) {
             {entry.venueName && entry.venueName.trim() ? entry.venueName.trim() : labelFor(VENUE_TYPES, entry.venueType)} · {labelFor(ETHNICITIES, entry.ethnicity, entry.ethnicityCustom)}
             {entry.timeOfNight ? ` · ${labelFor(TIME_OF_NIGHT, entry.timeOfNight)}` : ""}
           </div>
-          <div style={{ fontSize: 12, color: COLORS.inkMuted, marginTop: 2 }}>Interest: {labelFor(INITIAL_INTEREST, entry.initialInterest)} · Attr {entry.attractiveness}/10 · Rating {entry.overallRating}/10{entry.confidence ? ` · Confidence ${entry.confidence}/10` : ""}</div>
+          <div style={{ fontSize: 12, color: COLORS.inkMuted, marginTop: 2 }}>Interest: {labelFor(INITIAL_INTEREST, entry.initialInterest)} · Attr {entry.attractiveness}/10 · Rating {entry.overallRating}/10</div>
           <div style={{ fontSize: 12, color: COLORS.inkMuted, marginTop: 2 }}>Opener: {labelFor(OPENERS, entry.opener, entry.openerCustom)}</div>
           <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
             <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: 11, fontFamily: "JetBrains Mono, monospace", background: secured ? "rgba(201,154,62,0.15)" : COLORS.surface2, color: secured ? COLORS.gold : COLORS.inkFaint }}>
               {labelFor(OUTCOMES, entry.outcome, entry.outcomeCustom)}
             </span>
-            {entry.rejectionReason && <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: 11, fontFamily: "JetBrains Mono, monospace", background: COLORS.surface2, color: COLORS.inkMuted }}>{labelFor(REJECTION_REASONS, entry.rejectionReason, entry.rejectionReasonCustom)}</span>}
             {entry.makeOut && <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: 11, fontFamily: "JetBrains Mono, monospace", background: "rgba(138,63,74,0.2)", color: "#c97f8a" }}>MAKEOUT</span>}
+            {entry.hadSexSameNight && <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: 11, fontFamily: "JetBrains Mono, monospace", background: "rgba(138,63,74,0.2)", color: "#c97f8a" }}>SAME-NIGHT</span>}
           </div>
         </div>
         <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
@@ -820,6 +836,7 @@ function ApproachForm({ title, initial, onSave, onClose }) {
   const [ethnicityCustom, setEthnicityCustom] = useState(initial?.ethnicityCustom || "");
   const [initialInterest, setInitialInterest] = useState(initial?.initialInterest || "high");
   const [makeOut, setMakeOut] = useState(initial?.makeOut ?? false);
+  const [hadSexSameNight, setHadSexSameNight] = useState(initial?.hadSexSameNight ?? false);
   const [opener, setOpener] = useState(initial?.opener || "direct");
   const [openerCustom, setOpenerCustom] = useState(initial?.openerCustom || "");
   const [outcome, setOutcome] = useState(initial?.outcome || "nothing");
@@ -853,6 +870,12 @@ function ApproachForm({ title, initial, onSave, onClose }) {
           <button type="button" onClick={() => setMakeOut(false)} style={{ ...toggleBtn, ...(!makeOut ? toggleBtnActive : {}) }}>No</button>
         </div>
       </Field>
+      <Field label="Had sex same night?">
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" onClick={() => setHadSexSameNight(true)} style={{ ...toggleBtn, ...(hadSexSameNight ? toggleBtnActive : {}) }}>Yes</button>
+          <button type="button" onClick={() => setHadSexSameNight(false)} style={{ ...toggleBtn, ...(!hadSexSameNight ? toggleBtnActive : {}) }}>No</button>
+        </div>
+      </Field>
       <Field label="Opener used">
         <select value={opener} onChange={(e) => setOpener(e.target.value)} style={inputStyle}>{OPENERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</select>
         {opener === "other" && <input value={openerCustom} onChange={(e) => setOpenerCustom(e.target.value)} placeholder="Specify..." style={{ ...inputStyle, marginTop: 8 }} />}
@@ -874,7 +897,7 @@ function ApproachForm({ title, initial, onSave, onClose }) {
         </Field>
       )}
       <Field label="Notes"><textarea value={notes} onChange={(e) => setNotes(e.target.value)} style={{ ...inputStyle, minHeight: 70, resize: "none" }} placeholder="Context, what happened..." /></Field>
-      <button onClick={() => onSave({ date, name: name.trim(), venueType, venueName: venueName.trim(), timeOfNight, groupContext, preApproachSignal, ethnicity, ethnicityCustom, initialInterest, makeOut, opener, openerCustom, outcome, outcomeCustom, attractiveness, overallRating, confidence, rejectionReason: outcome === "nothing" ? rejectionReason : "", rejectionReasonCustom, notes: notes.trim() })} style={btnSolid}>Save</button>
+      <button onClick={() => onSave({ date, name: name.trim(), venueType, venueName: venueName.trim(), timeOfNight, groupContext, preApproachSignal, ethnicity, ethnicityCustom, initialInterest, makeOut, hadSexSameNight, opener, openerCustom, outcome, outcomeCustom, attractiveness, overallRating, confidence, rejectionReason: outcome === "nothing" ? rejectionReason : "", rejectionReasonCustom, notes: notes.trim() })} style={btnSolid}>Save</button>
     </Sheet>
   );
 }
