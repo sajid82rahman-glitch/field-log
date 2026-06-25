@@ -41,9 +41,6 @@ import {
   ScatterChart, Scatter, PieChart, Pie, Cell, Legend, LineChart, Line,
 } from "recharts";
 
-// Cloud sync is disabled — no Firebase project configured.
-// To enable it later: create a free Firebase project, add Firestore,
-// then reintroduce the firebase imports and config here.
 const CLOUD_ENABLED = false;
 let db = null;
 
@@ -59,6 +56,12 @@ const VENUE_TYPES = [
 ];
 const TIME_OF_NIGHT = [
   { id: "early", label: "Early" }, { id: "mid", label: "Mid" }, { id: "late", label: "Late" },
+];
+const GROUP_CONTEXT = [
+  { id: "alone", label: "Alone" }, { id: "small_group", label: "Small group (2-3)" }, { id: "large_group", label: "Large group (4+)" },
+];
+const PRE_APPROACH_SIGNAL = [
+  { id: "clear_yes", label: "Clear interest before approach" }, { id: "neutral", label: "Neutral / no read" }, { id: "none", label: "No signal / cold approach" },
 ];
 const INITIAL_INTEREST = [{ id: "high", label: "High" }, { id: "low", label: "Low" }];
 const OPENERS = [
@@ -195,9 +198,10 @@ function FieldLog() {
   function exportApproaches() {
     downloadCSV("100-run.csv", approaches.map((e) => ({
       Date: e.date, Name: e.name || "", VenueType: labelFor(VENUE_TYPES, e.venueType), VenueName: e.venueName || "",
-      TimeOfNight: labelFor(TIME_OF_NIGHT, e.timeOfNight), Ethnicity: labelFor(ETHNICITIES, e.ethnicity, e.ethnicityCustom),
+      TimeOfNight: labelFor(TIME_OF_NIGHT, e.timeOfNight), GroupContext: labelFor(GROUP_CONTEXT, e.groupContext), PreApproachSignal: labelFor(PRE_APPROACH_SIGNAL, e.preApproachSignal),
+      Ethnicity: labelFor(ETHNICITIES, e.ethnicity, e.ethnicityCustom),
       InitialInterest: labelFor(INITIAL_INTEREST, e.initialInterest), Opener: labelFor(OPENERS, e.opener, e.openerCustom),
-      MadeOutSameNight: e.makeOut ? "Yes" : "No", HadSexSameNight: e.hadSexSameNight ? "Yes" : "No",
+      MadeOutSameNight: e.makeOut ? "Yes" : "No",
       Outcome: labelFor(OUTCOMES, e.outcome, e.outcomeCustom), FollowUp: labelFor(FOLLOWUPS, e.followUp || "pending"),
       Attractiveness: e.attractiveness, OverallRating: e.overallRating, Confidence: e.confidence || "",
       RejectionReason: e.rejectionReason ? labelFor(REJECTION_REASONS, e.rejectionReason, e.rejectionReasonCustom) : "",
@@ -205,7 +209,7 @@ function FieldLog() {
     })));
   }
 
-  const sameNightSexCount = approaches.filter((e) => e.hadSexSameNight).length;
+  const sameNightSexCount = approaches.filter((e) => e.outcome === "had_sex").length;
   const totalApproaches = approaches.length;
   const securedTotal = approaches.filter(isSecured).length;
   const securedRateTotal = totalApproaches ? Math.round((securedTotal / totalApproaches) * 100) : 0;
@@ -219,6 +223,8 @@ function FieldLog() {
   const openerRates = groupRate(approaches, (e) => labelFor(OPENERS, e.opener, e.openerCustom));
   const interestRates = groupRate(approaches, (e) => labelFor(INITIAL_INTEREST, e.initialInterest));
   const weekdayRates = groupRate(approaches, (e) => weekdayOf(e.date));
+  const groupContextRates = groupRate(approaches.filter((e) => e.groupContext), (e) => labelFor(GROUP_CONTEXT, e.groupContext));
+  const preApproachRates = groupRate(approaches.filter((e) => e.preApproachSignal), (e) => labelFor(PRE_APPROACH_SIGNAL, e.preApproachSignal));
 
   const openerByVenue = crossTabRate(approaches, (e) => labelFor(OPENERS, e.opener, e.openerCustom), (e) => labelFor(VENUE_TYPES, e.venueType));
   const openerByInterest = crossTabRate(approaches, (e) => labelFor(OPENERS, e.opener, e.openerCustom), (e) => labelFor(INITIAL_INTEREST, e.initialInterest));
@@ -250,6 +256,8 @@ function FieldLog() {
     { label: "Opener", bw: bestWorst(openerRates) },
     { label: "Initial interest", bw: bestWorst(interestRates) },
     { label: "Day of week", bw: bestWorst(weekdayRates) },
+    { label: "Group context", bw: bestWorst(groupContextRates) },
+    { label: "Pre-approach signal", bw: bestWorst(preApproachRates) },
   ].filter((i) => i.bw);
 
   const outcomeDist = (() => {
@@ -438,7 +446,9 @@ function FieldLog() {
                   <BreakdownTable title="Secured rate by ethnicity" rows={ethnicityRates} />
                   <BreakdownTable title="Secured rate by opener" rows={openerRates} />
                   <BreakdownTable title="Secured rate by initial interest" rows={interestRates} />
-                  <BreakdownTable title="Secured rate by day of week" rows={weekdayRates} />
+                  <BreakdownTable title="Secured rate by day of week (low n unless you vary nights)" rows={weekdayRates} />
+                  {groupContextRates.length > 0 && <BreakdownTable title="Secured rate by group context" rows={groupContextRates} />}
+                  {preApproachRates.length > 0 && <BreakdownTable title="Secured rate by pre-approach signal" rows={preApproachRates} />}
                   <BreakdownTable title="Secured rate: makeout vs. no makeout" rows={makeoutRates} />
                   <CountTable title="Outcome distribution (all approaches)" rows={outcomeDist} />
                   <CountTable title="Follow-up distribution (secured only)" rows={followUpDist} />
@@ -778,7 +788,6 @@ function ApproachRow({ entry, onEdit, onDelete, onUpdate }) {
             </span>
             {entry.rejectionReason && <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: 11, fontFamily: "JetBrains Mono, monospace", background: COLORS.surface2, color: COLORS.inkMuted }}>{labelFor(REJECTION_REASONS, entry.rejectionReason, entry.rejectionReasonCustom)}</span>}
             {entry.makeOut && <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: 11, fontFamily: "JetBrains Mono, monospace", background: "rgba(138,63,74,0.2)", color: "#c97f8a" }}>MAKEOUT</span>}
-            {entry.hadSexSameNight && <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: 11, fontFamily: "JetBrains Mono, monospace", background: "rgba(138,63,74,0.2)", color: "#c97f8a" }}>SAME-NIGHT</span>}
           </div>
         </div>
         <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
@@ -805,11 +814,12 @@ function ApproachForm({ title, initial, onSave, onClose }) {
   const [venueType, setVenueType] = useState(initial?.venueType || "bar");
   const [venueName, setVenueName] = useState(initial?.venueName || "");
   const [timeOfNight, setTimeOfNight] = useState(initial?.timeOfNight || "");
+  const [groupContext, setGroupContext] = useState(initial?.groupContext || "");
+  const [preApproachSignal, setPreApproachSignal] = useState(initial?.preApproachSignal || "");
   const [ethnicity, setEthnicity] = useState(initial?.ethnicity || "white");
   const [ethnicityCustom, setEthnicityCustom] = useState(initial?.ethnicityCustom || "");
   const [initialInterest, setInitialInterest] = useState(initial?.initialInterest || "high");
   const [makeOut, setMakeOut] = useState(initial?.makeOut ?? false);
-  const [hadSexSameNight, setHadSexSameNight] = useState(initial?.hadSexSameNight ?? false);
   const [opener, setOpener] = useState(initial?.opener || "direct");
   const [openerCustom, setOpenerCustom] = useState(initial?.openerCustom || "");
   const [outcome, setOutcome] = useState(initial?.outcome || "nothing");
@@ -830,6 +840,8 @@ function ApproachForm({ title, initial, onSave, onClose }) {
       </Field>
       <Field label="Specific venue name (optional)"><input value={venueName} onChange={(e) => setVenueName(e.target.value)} style={inputStyle} placeholder="e.g. Le Bain" /></Field>
       <Field label="Time of night"><SegToggle options={TIME_OF_NIGHT} value={timeOfNight} onChange={setTimeOfNight} /></Field>
+      <Field label="Group context"><SegToggle options={GROUP_CONTEXT} value={groupContext} onChange={setGroupContext} /></Field>
+      <Field label="Pre-approach signal (before you walked up)"><SegToggle options={PRE_APPROACH_SIGNAL} value={preApproachSignal} onChange={setPreApproachSignal} /></Field>
       <Field label="Ethnicity">
         <select value={ethnicity} onChange={(e) => setEthnicity(e.target.value)} style={inputStyle}>{ETHNICITIES.map((e) => <option key={e.id} value={e.id}>{e.label}</option>)}</select>
         {ethnicity === "other" && <input value={ethnicityCustom} onChange={(e) => setEthnicityCustom(e.target.value)} placeholder="Specify..." style={{ ...inputStyle, marginTop: 8 }} />}
@@ -839,12 +851,6 @@ function ApproachForm({ title, initial, onSave, onClose }) {
         <div style={{ display: "flex", gap: 8 }}>
           <button type="button" onClick={() => setMakeOut(true)} style={{ ...toggleBtn, ...(makeOut ? toggleBtnActive : {}) }}>Yes</button>
           <button type="button" onClick={() => setMakeOut(false)} style={{ ...toggleBtn, ...(!makeOut ? toggleBtnActive : {}) }}>No</button>
-        </div>
-      </Field>
-      <Field label="Had sex same night?">
-        <div style={{ display: "flex", gap: 8 }}>
-          <button type="button" onClick={() => setHadSexSameNight(true)} style={{ ...toggleBtn, ...(hadSexSameNight ? toggleBtnActive : {}) }}>Yes</button>
-          <button type="button" onClick={() => setHadSexSameNight(false)} style={{ ...toggleBtn, ...(!hadSexSameNight ? toggleBtnActive : {}) }}>No</button>
         </div>
       </Field>
       <Field label="Opener used">
@@ -868,7 +874,7 @@ function ApproachForm({ title, initial, onSave, onClose }) {
         </Field>
       )}
       <Field label="Notes"><textarea value={notes} onChange={(e) => setNotes(e.target.value)} style={{ ...inputStyle, minHeight: 70, resize: "none" }} placeholder="Context, what happened..." /></Field>
-      <button onClick={() => onSave({ date, name: name.trim(), venueType, venueName: venueName.trim(), timeOfNight, ethnicity, ethnicityCustom, initialInterest, makeOut, hadSexSameNight, opener, openerCustom, outcome, outcomeCustom, attractiveness, overallRating, confidence, rejectionReason: outcome === "nothing" ? rejectionReason : "", rejectionReasonCustom, notes: notes.trim() })} style={btnSolid}>Save</button>
+      <button onClick={() => onSave({ date, name: name.trim(), venueType, venueName: venueName.trim(), timeOfNight, groupContext, preApproachSignal, ethnicity, ethnicityCustom, initialInterest, makeOut, opener, openerCustom, outcome, outcomeCustom, attractiveness, overallRating, confidence, rejectionReason: outcome === "nothing" ? rejectionReason : "", rejectionReasonCustom, notes: notes.trim() })} style={btnSolid}>Save</button>
     </Sheet>
   );
 }
