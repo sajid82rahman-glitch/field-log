@@ -30,16 +30,22 @@
 <script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js"></script>
 
 <script type="text/babel" data-presets="react" data-type="module">
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Plus, X, ChevronDown, ChevronUp, Trash2, Pencil,
-  RotateCcw, Download, TrendingUp, TrendingDown,
+  RotateCcw, Download, TrendingUp, TrendingDown, Cloud, CloudOff, Settings, Check,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  ScatterChart, Scatter, PieChart, Pie, Cell, Legend,
+  ScatterChart, Scatter, PieChart, Pie, Cell, Legend, LineChart, Line,
 } from "recharts";
+
+// Cloud sync is disabled — no Firebase project configured.
+// To enable it later: create a free Firebase project, add Firestore,
+// then reintroduce the firebase imports and config here.
+const CLOUD_ENABLED = false;
+let db = null;
 
 const COLORS = {
   bg: "#171210", surface: "#221b16", surface2: "#2a221b", border: "#3a2f26",
@@ -50,6 +56,9 @@ const PIE_COLORS = ["#8a8f5c", "#c99a3e", "#b0512e", "#6e6155", "#a8978a", "#5c5
 const VENUE_TYPES = [
   { id: "bar", label: "Bar" }, { id: "club", label: "Club" },
   { id: "house_party", label: "House Party" }, { id: "street", label: "Street" },
+];
+const TIME_OF_NIGHT = [
+  { id: "early", label: "Early" }, { id: "mid", label: "Mid" }, { id: "late", label: "Late" },
 ];
 const INITIAL_INTEREST = [{ id: "high", label: "High" }, { id: "low", label: "Low" }];
 const OPENERS = [
@@ -66,6 +75,12 @@ const FOLLOWUPS = [
   { id: "pending", label: "Pending" }, { id: "no_reply", label: "No reply" },
   { id: "flaked", label: "Flaked" }, { id: "still_talking", label: "Still talking" },
   { id: "met_up", label: "Met up" }, { id: "had_sex", label: "Had sex" }, { id: "didnt_work_out", label: "Didn't work out" },
+];
+const REJECTION_REASONS = [
+  { id: "boyfriend", label: "Has boyfriend" }, { id: "not_interested", label: "Not interested" },
+  { id: "in_a_hurry", label: "In a hurry / leaving" }, { id: "with_group", label: "Too tied up with group" },
+  { id: "language", label: "Language barrier" }, { id: "age_gap", label: "Age gap" },
+  { id: "no_clear_reason", label: "No clear reason" }, { id: "other", label: "Other" },
 ];
 const ETHNICITIES = [
   { id: "black", label: "Black" }, { id: "white", label: "White" },
@@ -110,6 +125,17 @@ function bestWorst(rates) {
   const sorted = [...rates].sort((a, b) => b.rate - a.rate);
   return { best: sorted[0], worst: sorted[sorted.length - 1] };
 }
+function crossTabRate(entries, keyFnA, keyFnB) {
+  const groups = {};
+  entries.forEach((e) => {
+    const a = keyFnA(e), b = keyFnB(e);
+    const key = a + " · " + b;
+    if (!groups[key]) groups[key] = { total: 0, secured: 0 };
+    groups[key].total += 1;
+    if (isSecured(e)) groups[key].secured += 1;
+  });
+  return Object.entries(groups).map(([name, v]) => ({ name, rate: v.total ? Math.round((v.secured / v.total) * 100) : 0, count: v.total }));
+}
 
 function downloadCSV(filename, rows) {
   if (!rows || !rows.length) return;
@@ -140,6 +166,10 @@ function FieldLog() {
   const [showAddApproach, setShowAddApproach] = useState(false);
   const [editApproach, setEditApproach] = useState(null);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [showSync, setShowSync] = useState(false);
+  const [syncCode, setSyncCode] = useState("");
+  const [syncStatus, setSyncStatus] = useState("idle");
+  const syncTimer = useRef(null);
 
   useEffect(() => {
     (async () => {
@@ -148,7 +178,14 @@ function FieldLog() {
       setLoaded(true);
     })();
   }, []);
+
   useEffect(() => { if (loaded) safeSet("approach-log", approaches); }, [approaches, loaded]);
+
+  async function saveSyncCode(code) {
+    const trimmed = code.trim();
+    setSyncCode(trimmed);
+    await safeSet("sync-code", trimmed);
+  }
 
   function addApproach(entry) { setApproaches((a) => [{ id: uid(), followUp: "pending", ...entry }, ...a]); setShowAddApproach(false); }
   function updateApproach(id, patch) { setApproaches((a) => a.map((e) => (e.id === id ? { ...e, ...patch } : e))); }
@@ -157,11 +194,14 @@ function FieldLog() {
 
   function exportApproaches() {
     downloadCSV("100-run.csv", approaches.map((e) => ({
-      Date: e.date, Name: e.name || "", Venue: labelFor(VENUE_TYPES, e.venueType), Ethnicity: labelFor(ETHNICITIES, e.ethnicity, e.ethnicityCustom),
+      Date: e.date, Name: e.name || "", VenueType: labelFor(VENUE_TYPES, e.venueType), VenueName: e.venueName || "",
+      TimeOfNight: labelFor(TIME_OF_NIGHT, e.timeOfNight), Ethnicity: labelFor(ETHNICITIES, e.ethnicity, e.ethnicityCustom),
       InitialInterest: labelFor(INITIAL_INTEREST, e.initialInterest), Opener: labelFor(OPENERS, e.opener, e.openerCustom),
       MadeOutSameNight: e.makeOut ? "Yes" : "No", HadSexSameNight: e.hadSexSameNight ? "Yes" : "No",
       Outcome: labelFor(OUTCOMES, e.outcome, e.outcomeCustom), FollowUp: labelFor(FOLLOWUPS, e.followUp || "pending"),
-      Attractiveness: e.attractiveness, OverallRating: e.overallRating, Notes: e.notes || "",
+      Attractiveness: e.attractiveness, OverallRating: e.overallRating, Confidence: e.confidence || "",
+      RejectionReason: e.rejectionReason ? labelFor(REJECTION_REASONS, e.rejectionReason, e.rejectionReasonCustom) : "",
+      Notes: e.notes || "",
     })));
   }
 
@@ -173,13 +213,39 @@ function FieldLog() {
   const makeOutCount = approaches.filter((e) => e.makeOut).length;
 
   const venueRates = groupRate(approaches, (e) => labelFor(VENUE_TYPES, e.venueType));
+  const venueNameRates = groupRate(approaches.filter((e) => e.venueName && e.venueName.trim()), (e) => e.venueName.trim());
+  const timeOfNightRates = groupRate(approaches.filter((e) => e.timeOfNight), (e) => labelFor(TIME_OF_NIGHT, e.timeOfNight));
   const ethnicityRates = groupRate(approaches, (e) => labelFor(ETHNICITIES, e.ethnicity, e.ethnicityCustom));
   const openerRates = groupRate(approaches, (e) => labelFor(OPENERS, e.opener, e.openerCustom));
   const interestRates = groupRate(approaches, (e) => labelFor(INITIAL_INTEREST, e.initialInterest));
   const weekdayRates = groupRate(approaches, (e) => weekdayOf(e.date));
 
+  const openerByVenue = crossTabRate(approaches, (e) => labelFor(OPENERS, e.opener, e.openerCustom), (e) => labelFor(VENUE_TYPES, e.venueType));
+  const openerByInterest = crossTabRate(approaches, (e) => labelFor(OPENERS, e.opener, e.openerCustom), (e) => labelFor(INITIAL_INTEREST, e.initialInterest));
+
+  const sortedByDate = [...approaches].sort((a, b) => (a.date < b.date ? -1 : 1));
+  const half = Math.floor(sortedByDate.length / 2);
+  const firstHalf = sortedByDate.slice(0, half);
+  const secondHalf = sortedByDate.slice(half);
+  const rateOf = (arr) => (arr.length ? Math.round((arr.filter(isSecured).length / arr.length) * 100) : null);
+  const firstHalfRate = rateOf(firstHalf);
+  const secondHalfRate = rateOf(secondHalf);
+  const progressionDelta = (firstHalfRate !== null && secondHalfRate !== null) ? secondHalfRate - firstHalfRate : null;
+
+  const rollingChunks = (() => {
+    const chunkSize = 10;
+    const chunks = [];
+    for (let i = 0; i < sortedByDate.length; i += chunkSize) {
+      const slice = sortedByDate.slice(i, i + chunkSize);
+      chunks.push({ name: `${i + 1}-${i + slice.length}`, rate: rateOf(slice) ?? 0 });
+    }
+    return chunks;
+  })();
+
   const insights = [
-    { label: "Venue", bw: bestWorst(venueRates) },
+    { label: "Venue type", bw: bestWorst(venueRates) },
+    { label: "Specific venue", bw: bestWorst(venueNameRates) },
+    { label: "Time of night", bw: bestWorst(timeOfNightRates) },
     { label: "Ethnicity", bw: bestWorst(ethnicityRates) },
     { label: "Opener", bw: bestWorst(openerRates) },
     { label: "Initial interest", bw: bestWorst(interestRates) },
@@ -203,6 +269,33 @@ function FieldLog() {
   const avgRatingSecured = avg(approaches.filter(isSecured).map((e) => e.overallRating));
   const avgRatingNot = avg(approaches.filter((e) => !isSecured(e)).map((e) => e.overallRating));
 
+  const confidenceLogged = approaches.filter((e) => e.confidence);
+  const avgConfidence = avg(confidenceLogged.map((e) => e.confidence));
+  const confFirstHalf = sortedByDate.filter((e) => e.confidence).slice(0, Math.floor(sortedByDate.filter((e) => e.confidence).length / 2));
+  const confSecondHalf = sortedByDate.filter((e) => e.confidence).slice(Math.floor(sortedByDate.filter((e) => e.confidence).length / 2));
+  const avgConfFirst = confFirstHalf.length ? avg(confFirstHalf.map((e) => e.confidence)) : null;
+  const avgConfSecond = confSecondHalf.length ? avg(confSecondHalf.map((e) => e.confidence)) : null;
+  const confidenceRollingChunks = (() => {
+    const withConf = sortedByDate.filter((e) => e.confidence);
+    const chunkSize = 10;
+    const chunks = [];
+    for (let i = 0; i < withConf.length; i += chunkSize) {
+      const slice = withConf.slice(i, i + chunkSize);
+      const avgVal = slice.reduce((s, e) => s + e.confidence, 0) / slice.length;
+      chunks.push({ name: `${i + 1}-${i + slice.length}`, confidence: Math.round(avgVal * 10) / 10 });
+    }
+    return chunks;
+  })();
+
+  const rejectionReasonDist = (() => {
+    const groups = {};
+    approaches.filter((e) => !isSecured(e) && e.rejectionReason).forEach((e) => {
+      const k = labelFor(REJECTION_REASONS, e.rejectionReason, e.rejectionReasonCustom);
+      groups[k] = (groups[k] || 0) + 1;
+    });
+    return Object.entries(groups).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+  })();
+
   return (
     <div style={{ background: COLORS.bg, minHeight: "100vh", fontFamily: "Inter, sans-serif" }}>
       <style>{`
@@ -214,9 +307,14 @@ function FieldLog() {
       `}</style>
 
       <div style={{ maxWidth: 480, margin: "0 auto", paddingBottom: 100 }}>
-        <div style={{ padding: "24px 20px 16px" }}>
-          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: 2, color: COLORS.inkFaint, marginBottom: 4 }}>FIELD LOG</div>
-          <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 600, color: COLORS.ink, margin: 0 }}>100 Run</h1>
+        <div style={{ padding: "24px 20px 16px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div>
+            <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: 2, color: COLORS.inkFaint, marginBottom: 4 }}>FIELD LOG</div>
+            <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 600, color: COLORS.ink, margin: 0 }}>100 Run</h1>
+          </div>
+          <button onClick={() => setShowSync(true)} style={{ background: "none", border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: 8, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+            <CloudOff size={16} color={COLORS.inkFaint} />
+          </button>
         </div>
 
         <div style={{ display: "flex", gap: 0, padding: "0 20px", borderBottom: `1px solid ${COLORS.border}` }}>
@@ -240,6 +338,59 @@ function FieldLog() {
               <StatCard label="Same-night makeouts" value={makeOutCount} />
               <StatCard label="Same-night sex" value={sameNightSexCount} />
             </div>
+
+            {progressionDelta !== null && (
+              <>
+                <div style={monoLabel}>PROGRESSION</div>
+                <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "12px 14px", marginTop: 8, marginBottom: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ fontSize: 12, color: COLORS.inkMuted }}>First half: <span style={{ color: COLORS.ink, fontFamily: "JetBrains Mono, monospace" }}>{firstHalfRate}%</span></div>
+                    <div style={{ fontSize: 12, color: COLORS.inkMuted }}>Second half: <span style={{ color: COLORS.ink, fontFamily: "JetBrains Mono, monospace" }}>{secondHalfRate}%</span></div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4, color: progressionDelta >= 0 ? "#8a8f5c" : COLORS.warn, fontSize: 13, fontWeight: 600 }}>
+                      {progressionDelta >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+                      {progressionDelta >= 0 ? "+" : ""}{progressionDelta}%
+                    </div>
+                  </div>
+                  {rollingChunks.length > 1 && (
+                    <div style={{ marginTop: 12 }}>
+                      <ResponsiveContainer width="100%" height={120}>
+                        <LineChart data={rollingChunks} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
+                          <CartesianGrid stroke={COLORS.border} strokeDasharray="3 3" vertical={false} />
+                          <XAxis dataKey="name" stroke={COLORS.inkFaint} fontSize={10} tickLine={false} axisLine={{ stroke: COLORS.border }} />
+                          <YAxis stroke={COLORS.inkFaint} fontSize={10} tickLine={false} axisLine={false} domain={[0, 100]} unit="%" />
+                          <Tooltip contentStyle={tooltipStyle} />
+                          <Line type="monotone" dataKey="rate" stroke={COLORS.gold} strokeWidth={2} dot={{ r: 3 }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                      <div style={{ fontSize: 10, color: COLORS.inkFaint, marginTop: 2 }}>secured rate per 10 approaches, chronological</div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {confidenceLogged.length > 0 && (
+              <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "12px 14px", marginBottom: 22 }}>
+                <div style={{ fontSize: 11, color: COLORS.inkFaint, marginBottom: 6 }}>Confidence (avg {avgConfidence}/10{confidenceLogged.length < approaches.length ? `, n=${confidenceLogged.length}` : ""})</div>
+                {avgConfFirst !== null && avgConfSecond !== null && (
+                  <div style={{ fontSize: 12, color: COLORS.inkMuted, marginBottom: 8 }}>
+                    First half: <span style={{ color: COLORS.ink, fontFamily: "JetBrains Mono, monospace" }}>{avgConfFirst}</span> · Second half: <span style={{ color: COLORS.ink, fontFamily: "JetBrains Mono, monospace" }}>{avgConfSecond}</span>
+                  </div>
+                )}
+                {confidenceRollingChunks.length > 1 && (
+                  <ResponsiveContainer width="100%" height={110}>
+                    <LineChart data={confidenceRollingChunks} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
+                      <CartesianGrid stroke={COLORS.border} strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="name" stroke={COLORS.inkFaint} fontSize={10} tickLine={false} axisLine={{ stroke: COLORS.border }} />
+                      <YAxis stroke={COLORS.inkFaint} fontSize={10} tickLine={false} axisLine={false} domain={[0, 10]} />
+                      <Tooltip contentStyle={tooltipStyle} />
+                      <Line type="monotone" dataKey="confidence" stroke="#8a8f5c" strokeWidth={2} dot={{ r: 3 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
+                <div style={{ fontSize: 10, color: COLORS.inkFaint, marginTop: 2 }}>confidence going in, per 10 approaches, chronological — should trend up regardless of outcome</div>
+              </div>
+            )}
 
             {insights.length > 0 && (
               <>
@@ -273,9 +424,17 @@ function FieldLog() {
 
             {approaches.length > 0 && (
               <>
-                <div style={{ ...monoLabel, marginTop: 22 }}>FULL BREAKDOWN</div>
+                <div style={{ ...monoLabel, marginTop: 22 }}>CROSS-TABS</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 8, marginBottom: 12 }}>
+                  <BreakdownTable title="Opener × venue type secured rate" rows={openerByVenue} />
+                  <BreakdownTable title="Opener × initial interest secured rate" rows={openerByInterest} />
+                </div>
+
+                <div style={{ ...monoLabel, marginTop: 10 }}>FULL BREAKDOWN</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 8 }}>
-                  <BreakdownTable title="Secured rate by venue" rows={venueRates} />
+                  <BreakdownTable title="Secured rate by venue type" rows={venueRates} />
+                  {venueNameRates.length > 0 && <BreakdownTable title="Secured rate by specific venue" rows={venueNameRates} />}
+                  {timeOfNightRates.length > 0 && <BreakdownTable title="Secured rate by time of night" rows={timeOfNightRates} />}
                   <BreakdownTable title="Secured rate by ethnicity" rows={ethnicityRates} />
                   <BreakdownTable title="Secured rate by opener" rows={openerRates} />
                   <BreakdownTable title="Secured rate by initial interest" rows={interestRates} />
@@ -283,6 +442,7 @@ function FieldLog() {
                   <BreakdownTable title="Secured rate: makeout vs. no makeout" rows={makeoutRates} />
                   <CountTable title="Outcome distribution (all approaches)" rows={outcomeDist} />
                   <CountTable title="Follow-up distribution (secured only)" rows={followUpDist} />
+                  {rejectionReasonDist.length > 0 && <CountTable title="Rejection reasons (unsuccessful approaches)" rows={rejectionReasonDist} />}
                   <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "10px 14px" }}>
                     <div style={{ fontSize: 11, color: COLORS.inkFaint, marginBottom: 8 }}>Averages</div>
                     <div style={{ fontSize: 12, color: COLORS.ink, marginBottom: 4 }}>Attractiveness — secured: {avgAttrSecured} · not secured: {avgAttrNot}</div>
@@ -312,7 +472,34 @@ function FieldLog() {
 
       {showAddApproach && <ApproachForm title="Log approach" onSave={addApproach} onClose={() => setShowAddApproach(false)} />}
       {editApproach && <ApproachForm title="Edit approach" initial={editApproach} onSave={(data) => { updateApproach(editApproach.id, data); setEditApproach(null); }} onClose={() => setEditApproach(null)} />}
+      {showSync && <SyncSheet syncCode={syncCode} onSave={saveSyncCode} onClose={() => setShowSync(false)} cloudEnabled={CLOUD_ENABLED} status={syncStatus} />}
     </div>
+  );
+}
+
+function SyncSheet({ syncCode, onSave, onClose, cloudEnabled, status }) {
+  const [draft, setDraft] = useState(syncCode || "");
+  return (
+    <Sheet title="Cloud sync" onClose={onClose}>
+      {!cloudEnabled && (
+        <div style={{ fontSize: 13, color: COLORS.inkMuted, marginBottom: 14, lineHeight: 1.5 }}>
+          Cloud sync isn't configured yet. A free Firebase project needs to be set up to enable it. Until then your data stays saved locally on this device only.
+        </div>
+      )}
+      {cloudEnabled && (
+        <>
+          <div style={{ fontSize: 13, color: COLORS.inkMuted, marginBottom: 14, lineHeight: 1.5 }}>
+            Pick a sync code (any word or phrase). Enter the same code on another device to pull in the same data.
+          </div>
+          <Field label="Sync code">
+            <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="e.g. a private phrase" style={inputStyle} />
+          </Field>
+          <button onClick={() => onSave(draft)} style={btnSolid}>
+            {status === "syncing" ? "Syncing..." : status === "synced" ? "Synced ✓" : "Save & Sync"}
+          </button>
+        </>
+      )}
+    </Sheet>
   );
 }
 
@@ -404,7 +591,7 @@ function ApproachesTab({ approaches, onEdit, onDelete, onUpdate, confirmReset, s
       if (!groups[e.date]) groups[e.date] = { date: e.date, count: 0, secured: 0, venues: new Set() };
       groups[e.date].count += 1;
       if (isSecured(e)) groups[e.date].secured += 1;
-      groups[e.date].venues.add(labelFor(VENUE_TYPES, e.venueType));
+      groups[e.date].venues.add(e.venueName && e.venueName.trim() ? e.venueName.trim() : labelFor(VENUE_TYPES, e.venueType));
     });
     return Object.values(groups).sort((a, b) => (a.date < b.date ? 1 : -1));
   })();
@@ -467,7 +654,7 @@ function ApproachesTab({ approaches, onEdit, onDelete, onUpdate, confirmReset, s
                       <div key={e.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontSize: 13, color: COLORS.ink, fontWeight: 600 }}>{e.name || "Unnamed"}</div>
-                          <div style={{ fontSize: 11, color: COLORS.inkMuted }}>{fmtDate(e.date)} · {labelFor(VENUE_TYPES, e.venueType)}</div>
+                          <div style={{ fontSize: 11, color: COLORS.inkMuted }}>{fmtDate(e.date)} · {e.venueName && e.venueName.trim() ? e.venueName.trim() : labelFor(VENUE_TYPES, e.venueType)}</div>
                         </div>
                         <select value={e.followUp || "pending"} onChange={(ev) => onUpdate(e.id, { followUp: ev.target.value })} style={{ ...inputStyle, width: "auto", padding: "4px 8px", fontSize: 12 }}>
                           {FOLLOWUPS.map((ff) => <option key={ff.id} value={ff.id}>{ff.label}</option>)}
@@ -579,13 +766,17 @@ function ApproachRow({ entry, onEdit, onDelete, onUpdate }) {
         <div style={{ minWidth: 0 }}>
           <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: COLORS.inkFaint }}>{fmtDate(entry.date)}</div>
           {entry.name && <div style={{ fontFamily: "Fraunces, serif", fontSize: 14, color: COLORS.ink, fontWeight: 600, marginTop: 2 }}>{entry.name}</div>}
-          <div style={{ fontSize: 13, color: COLORS.ink, marginTop: 2 }}>{labelFor(VENUE_TYPES, entry.venueType)} · {labelFor(ETHNICITIES, entry.ethnicity, entry.ethnicityCustom)}</div>
-          <div style={{ fontSize: 12, color: COLORS.inkMuted, marginTop: 2 }}>Interest: {labelFor(INITIAL_INTEREST, entry.initialInterest)} · Attr {entry.attractiveness}/10 · Rating {entry.overallRating}/10</div>
+          <div style={{ fontSize: 13, color: COLORS.ink, marginTop: 2 }}>
+            {entry.venueName && entry.venueName.trim() ? entry.venueName.trim() : labelFor(VENUE_TYPES, entry.venueType)} · {labelFor(ETHNICITIES, entry.ethnicity, entry.ethnicityCustom)}
+            {entry.timeOfNight ? ` · ${labelFor(TIME_OF_NIGHT, entry.timeOfNight)}` : ""}
+          </div>
+          <div style={{ fontSize: 12, color: COLORS.inkMuted, marginTop: 2 }}>Interest: {labelFor(INITIAL_INTEREST, entry.initialInterest)} · Attr {entry.attractiveness}/10 · Rating {entry.overallRating}/10{entry.confidence ? ` · Confidence ${entry.confidence}/10` : ""}</div>
           <div style={{ fontSize: 12, color: COLORS.inkMuted, marginTop: 2 }}>Opener: {labelFor(OPENERS, entry.opener, entry.openerCustom)}</div>
           <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
             <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: 11, fontFamily: "JetBrains Mono, monospace", background: secured ? "rgba(201,154,62,0.15)" : COLORS.surface2, color: secured ? COLORS.gold : COLORS.inkFaint }}>
               {labelFor(OUTCOMES, entry.outcome, entry.outcomeCustom)}
             </span>
+            {entry.rejectionReason && <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: 11, fontFamily: "JetBrains Mono, monospace", background: COLORS.surface2, color: COLORS.inkMuted }}>{labelFor(REJECTION_REASONS, entry.rejectionReason, entry.rejectionReasonCustom)}</span>}
             {entry.makeOut && <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: 11, fontFamily: "JetBrains Mono, monospace", background: "rgba(138,63,74,0.2)", color: "#c97f8a" }}>MAKEOUT</span>}
             {entry.hadSexSameNight && <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: 11, fontFamily: "JetBrains Mono, monospace", background: "rgba(138,63,74,0.2)", color: "#c97f8a" }}>SAME-NIGHT</span>}
           </div>
@@ -612,6 +803,8 @@ function ApproachForm({ title, initial, onSave, onClose }) {
   const [date, setDate] = useState(initial?.date || todayISO());
   const [name, setName] = useState(initial?.name || "");
   const [venueType, setVenueType] = useState(initial?.venueType || "bar");
+  const [venueName, setVenueName] = useState(initial?.venueName || "");
+  const [timeOfNight, setTimeOfNight] = useState(initial?.timeOfNight || "");
   const [ethnicity, setEthnicity] = useState(initial?.ethnicity || "white");
   const [ethnicityCustom, setEthnicityCustom] = useState(initial?.ethnicityCustom || "");
   const [initialInterest, setInitialInterest] = useState(initial?.initialInterest || "high");
@@ -623,15 +816,20 @@ function ApproachForm({ title, initial, onSave, onClose }) {
   const [outcomeCustom, setOutcomeCustom] = useState(initial?.outcomeCustom || "");
   const [attractiveness, setAttractiveness] = useState(initial?.attractiveness ?? 5);
   const [overallRating, setOverallRating] = useState(initial?.overallRating ?? 5);
+  const [confidence, setConfidence] = useState(initial?.confidence ?? 5);
+  const [rejectionReason, setRejectionReason] = useState(initial?.rejectionReason || "");
+  const [rejectionReasonCustom, setRejectionReasonCustom] = useState(initial?.rejectionReasonCustom || "");
   const [notes, setNotes] = useState(initial?.notes || "");
 
   return (
     <Sheet title={title} onClose={onClose}>
       <Field label="Date"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={inputStyle} /></Field>
       <Field label="Name (if known)"><input value={name} onChange={(e) => setName(e.target.value)} style={inputStyle} placeholder="Optional" /></Field>
-      <Field label="Where">
+      <Field label="Venue type">
         <select value={venueType} onChange={(e) => setVenueType(e.target.value)} style={inputStyle}>{VENUE_TYPES.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}</select>
       </Field>
+      <Field label="Specific venue name (optional)"><input value={venueName} onChange={(e) => setVenueName(e.target.value)} style={inputStyle} placeholder="e.g. Le Bain" /></Field>
+      <Field label="Time of night"><SegToggle options={TIME_OF_NIGHT} value={timeOfNight} onChange={setTimeOfNight} /></Field>
       <Field label="Ethnicity">
         <select value={ethnicity} onChange={(e) => setEthnicity(e.target.value)} style={inputStyle}>{ETHNICITIES.map((e) => <option key={e.id} value={e.id}>{e.label}</option>)}</select>
         {ethnicity === "other" && <input value={ethnicityCustom} onChange={(e) => setEthnicityCustom(e.target.value)} placeholder="Specify..." style={{ ...inputStyle, marginTop: 8 }} />}
@@ -659,8 +857,18 @@ function ApproachForm({ title, initial, onSave, onClose }) {
       </Field>
       <Field label={`Attractiveness: ${attractiveness}/10`}><input type="range" min="1" max="10" value={attractiveness} onChange={(e) => setAttractiveness(Number(e.target.value))} style={{ width: "100%" }} /></Field>
       <Field label={`Overall interaction rating: ${overallRating}/10`}><input type="range" min="1" max="10" value={overallRating} onChange={(e) => setOverallRating(Number(e.target.value))} style={{ width: "100%" }} /></Field>
+      <Field label={`Confidence going in: ${confidence}/10`}><input type="range" min="1" max="10" value={confidence} onChange={(e) => setConfidence(Number(e.target.value))} style={{ width: "100%" }} /></Field>
+      {outcome === "nothing" && (
+        <Field label="Rejection reason (optional)">
+          <select value={rejectionReason} onChange={(e) => setRejectionReason(e.target.value)} style={inputStyle}>
+            <option value="">— Not specified —</option>
+            {REJECTION_REASONS.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+          </select>
+          {rejectionReason === "other" && <input value={rejectionReasonCustom} onChange={(e) => setRejectionReasonCustom(e.target.value)} placeholder="Specify..." style={{ ...inputStyle, marginTop: 8 }} />}
+        </Field>
+      )}
       <Field label="Notes"><textarea value={notes} onChange={(e) => setNotes(e.target.value)} style={{ ...inputStyle, minHeight: 70, resize: "none" }} placeholder="Context, what happened..." /></Field>
-      <button onClick={() => onSave({ date, name: name.trim(), venueType, ethnicity, ethnicityCustom, initialInterest, makeOut, hadSexSameNight, opener, openerCustom, outcome, outcomeCustom, attractiveness, overallRating, notes: notes.trim() })} style={btnSolid}>Save</button>
+      <button onClick={() => onSave({ date, name: name.trim(), venueType, venueName: venueName.trim(), timeOfNight, ethnicity, ethnicityCustom, initialInterest, makeOut, hadSexSameNight, opener, openerCustom, outcome, outcomeCustom, attractiveness, overallRating, confidence, rejectionReason: outcome === "nothing" ? rejectionReason : "", rejectionReasonCustom, notes: notes.trim() })} style={btnSolid}>Save</button>
     </Sheet>
   );
 }
