@@ -19,6 +19,7 @@
 {
   "imports": {
     "react": "https://esm.sh/react@18.3.1",
+    "react-dom": "https://esm.sh/react-dom@18.3.1",
     "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
     "lucide-react": "https://esm.sh/lucide-react@0.383.0?external=react",
     "recharts": "https://esm.sh/recharts@2.12.7?external=react,react-dom"
@@ -32,9 +33,8 @@
 import React, { useState, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import {
-  Plus, X, ChevronDown, ChevronUp, Trash2, Users, Pencil,
-  Home, AlertTriangle, Instagram, Wine, RotateCcw, Download, Link2, Clock, UserPlus,
-  Music, PartyPopper, Footprints, Smartphone, TrendingUp, TrendingDown,
+  Plus, X, ChevronDown, ChevronUp, Trash2, Pencil,
+  RotateCcw, Download, TrendingUp, TrendingDown,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -46,31 +46,6 @@ const COLORS = {
   ink: "#f0e6d8", inkMuted: "#a8978a", inkFaint: "#6e6155", warn: "#b0512e", gold: "#c99a3e",
 };
 const PIE_COLORS = ["#8a8f5c", "#c99a3e", "#b0512e", "#6e6155", "#a8978a", "#5c534a"];
-
-const STATUS = {
-  active:   { label: "Active",   color: "#8a8f5c" },
-  warming:  { label: "Warming",  color: "#c99a3e" },
-  inactive: { label: "Inactive", color: "#6e7b85" },
-  closed:   { label: "Closed",   color: "#5c534a" },
-};
-const STATUS_ORDER = ["active", "warming", "inactive", "closed"];
-
-const OWN_PLACE = [
-  { id: "yes", label: "Yes" }, { id: "no", label: "No" }, { id: "unknown", label: "Don't know yet" },
-];
-
-const CHANNEL = {
-  clubs:         { label: "Clubs", icon: Music },
-  bars:          { label: "Bars", icon: Wine },
-  house_parties: { label: "House Parties", icon: PartyPopper },
-  street:        { label: "Street", icon: Footprints },
-  instagram:     { label: "Instagram", icon: Instagram },
-  dating_apps:   { label: "Dating Apps", icon: Smartphone },
-  other:         { label: "Other", icon: Users },
-};
-const CHANNEL_ORDER = ["clubs", "bars", "house_parties", "street", "instagram", "dating_apps", "other"];
-const ROSTER_CAP = 3;
-const STALE_DAYS = 5;
 
 const VENUE_TYPES = [
   { id: "bar", label: "Bar" }, { id: "club", label: "Club" },
@@ -158,70 +133,28 @@ async function safeSet(key, value) {
   catch (e) { console.error("storage set failed", e); }
 }
 
-function RosterTracker() {
+function FieldLog() {
   const [tab, setTab] = useState("overview");
-  const [roster, setRoster] = useState([]);
   const [approaches, setApproaches] = useState([]);
   const [loaded, setLoaded] = useState(false);
-  const [expanded, setExpanded] = useState(null);
-  const [addPersonDraft, setAddPersonDraft] = useState(null);
   const [showAddApproach, setShowAddApproach] = useState(false);
-  const [editPerson, setEditPerson] = useState(null);
   const [editApproach, setEditApproach] = useState(null);
-  const [noteDraft, setNoteDraft] = useState({});
   const [confirmReset, setConfirmReset] = useState(false);
-  const [rosterFilter, setRosterFilter] = useState("all");
 
   useEffect(() => {
     (async () => {
-      const r = await safeGet("roster-entries");
       const a = await safeGet("approach-log");
-      setRoster(r || []); setApproaches(a || []);
+      setApproaches(a || []);
       setLoaded(true);
     })();
   }, []);
-  useEffect(() => { if (loaded) safeSet("roster-entries", roster); }, [roster, loaded]);
   useEffect(() => { if (loaded) safeSet("approach-log", approaches); }, [approaches, loaded]);
 
-  const liveCapped = roster.filter((p) => p.status === "active" || p.status === "warming");
-  const inactiveList = roster.filter((p) => p.status === "inactive");
-  const overCap = liveCapped.length > ROSTER_CAP;
-
-  function addPerson(data) {
-    setRoster((r) => [...r, { id: uid(), lastContact: todayISO(), ...data, notes: data.notes || [] }]);
-    setAddPersonDraft(null);
-  }
-  function updatePerson(id, patch) { setRoster((r) => r.map((p) => (p.id === id ? { ...p, ...patch } : p))); }
-  function deletePerson(id) { setRoster((r) => r.filter((p) => p.id !== id)); }
-  function addNote(id) {
-    const text = (noteDraft[id] || "").trim();
-    if (!text) return;
-    setRoster((r) => r.map((p) => p.id === id ? { ...p, lastContact: todayISO(), notes: [{ id: uid(), date: todayISO(), text }, ...p.notes] } : p));
-    setNoteDraft((d) => ({ ...d, [id]: "" }));
-  }
-  function deleteNote(personId, noteId) {
-    setRoster((r) => r.map((p) => p.id === personId ? { ...p, notes: p.notes.filter((n) => n.id !== noteId) } : p));
-  }
   function addApproach(entry) { setApproaches((a) => [{ id: uid(), followUp: "pending", ...entry }, ...a]); setShowAddApproach(false); }
   function updateApproach(id, patch) { setApproaches((a) => a.map((e) => (e.id === id ? { ...e, ...patch } : e))); }
   function deleteApproach(id) { setApproaches((a) => a.filter((e) => e.id !== id)); }
   function resetApproaches() { setApproaches([]); setConfirmReset(false); }
 
-  function addToRoster(entry) {
-    setAddPersonDraft({
-      name: entry.name || "", status: "warming", ownPlace: "unknown", smashed: false,
-      channel: "bars", sourceApproachId: entry.id, leaveDate: null, returnDate: null,
-    });
-  }
-
-  function exportRoster() {
-    downloadCSV("roster.csv", roster.map((p) => ({
-      Name: p.name, Status: STATUS[p.status]?.label || p.status, Smashed: p.smashed ? "Yes" : "No",
-      OwnPlaceOrCanHost: labelFor(OWN_PLACE, p.ownPlace) || "Don't know yet", Channel: CHANNEL[p.channel]?.label || p.channel, Phone: p.phone || "",
-      LastContact: p.lastContact, LeaveDate: p.leaveDate || "", ReturnDate: p.returnDate || "",
-      Notes: (p.notes || []).map((n) => `${n.date}: ${n.text}`).join(" | "),
-    })));
-  }
   function exportApproaches() {
     downloadCSV("100-run.csv", approaches.map((e) => ({
       Date: e.date, Name: e.name || "", Venue: labelFor(VENUE_TYPES, e.venueType), Ethnicity: labelFor(ETHNICITIES, e.ethnicity, e.ethnicityCustom),
@@ -232,9 +165,7 @@ function RosterTracker() {
     })));
   }
 
-  const smashedCount = roster.filter((p) => p.smashed).length;
   const sameNightSexCount = approaches.filter((e) => e.hadSexSameNight).length;
-  const leavingSoonCount = liveCapped.filter((p) => p.leaveDate && -daysSince(p.leaveDate) >= 0 && -daysSince(p.leaveDate) <= 7).length;
   const totalApproaches = approaches.length;
   const securedTotal = approaches.filter(isSecured).length;
   const securedRateTotal = totalApproaches ? Math.round((securedTotal / totalApproaches) * 100) : 0;
@@ -285,14 +216,14 @@ function RosterTracker() {
       <div style={{ maxWidth: 480, margin: "0 auto", paddingBottom: 100 }}>
         <div style={{ padding: "24px 20px 16px" }}>
           <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: 2, color: COLORS.inkFaint, marginBottom: 4 }}>FIELD LOG</div>
-          <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 600, color: COLORS.ink, margin: 0 }}>Roster &amp; Leads</h1>
+          <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 600, color: COLORS.ink, margin: 0 }}>100 Run</h1>
         </div>
 
-        <div style={{ display: "flex", gap: 0, padding: "0 20px", borderBottom: `1px solid ${COLORS.border}`, overflowX: "auto" }}>
-          {[{ id: "overview", label: "Overview" }, { id: "roster", label: "Roster" }, { id: "approaches", label: "100 Run" }].map((t) => (
+        <div style={{ display: "flex", gap: 0, padding: "0 20px", borderBottom: `1px solid ${COLORS.border}` }}>
+          {[{ id: "overview", label: "Overview" }, { id: "approaches", label: "100 Run" }].map((t) => (
             <button key={t.id} onClick={() => setTab(t.id)} style={{
               background: "none", border: "none", padding: "10px 4px", marginRight: 24,
-              fontFamily: "Inter, sans-serif", fontSize: 14, fontWeight: 600, whiteSpace: "nowrap",
+              fontFamily: "Inter, sans-serif", fontSize: 14, fontWeight: 600,
               color: tab === t.id ? COLORS.ink : COLORS.inkFaint,
               borderBottom: tab === t.id ? `2px solid ${COLORS.gold}` : "2px solid transparent", cursor: "pointer",
             }}>{t.label}</button>
@@ -301,16 +232,11 @@ function RosterTracker() {
 
         {tab === "overview" && (
           <div style={{ padding: 20 }}>
-            <div style={monoLabel}>ROSTER</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 8, marginBottom: 22 }}>
-              <StatCard label="Slots filled" value={`${liveCapped.length}/${ROSTER_CAP}`} warn={overCap} />
-              <StatCard label="Smashed (total)" value={smashedCount} />
-            </div>
-
             <div style={monoLabel}>100 RUN</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 8, marginBottom: 22 }}>
               <StatCard label="Logged" value={`${totalApproaches}/100`} />
               <StatCard label="Secured rate" value={`${securedRateTotal}%`} />
+              <StatCard label="Still talking" value={stillTalkingCount} />
               <StatCard label="Same-night makeouts" value={makeOutCount} />
               <StatCard label="Same-night sex" value={sameNightSexCount} />
             </div>
@@ -368,70 +294,22 @@ function RosterTracker() {
           </div>
         )}
 
-        {tab === "roster" && (
-          <div style={{ padding: 20 }}>
-            <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
-              {[{ id: "all", label: "All" }, { id: "smashed", label: "Smashed" }].map((f) => (
-                <button key={f.id} onClick={() => setRosterFilter(f.id)} style={{ ...toggleBtn, flex: 1, fontSize: 12, padding: "8px", ...(rosterFilter === f.id ? toggleBtnActive : {}) }}>{f.label}</button>
-              ))}
-            </div>
-
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
-                <span style={monoLabel}>ROSTER (3 SLOTS)</span>
-                <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 13, color: overCap ? COLORS.warn : COLORS.ink, fontWeight: 600 }}>{liveCapped.length} / {ROSTER_CAP}</span>
-              </div>
-              <div style={{ display: "flex", gap: 4 }}>
-                {Array.from({ length: Math.max(ROSTER_CAP, liveCapped.length) }).map((_, i) => (
-                  <div key={i} style={{ flex: 1, height: 8, borderRadius: 4, background: i < liveCapped.length ? (overCap && i >= ROSTER_CAP ? COLORS.warn : "#8a8f5c") : COLORS.surface2 }} />
-                ))}
-              </div>
-              {overCap && (
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, color: COLORS.warn, fontSize: 12 }}>
-                  <AlertTriangle size={14} /> Over your cap — {liveCapped.length - ROSTER_CAP} more than your rule of 3. Drop one before adding another.
-                </div>
-              )}
-            </div>
-
-            {roster.length === 0 && <EmptyState text="No one on the roster yet. Add someone to start tracking." />}
-
-            {(() => {
-              if (rosterFilter === "all") {
-                return liveCapped.length > 0 ? (
-                  <SectionList label="ROSTER" people={liveCapped} approaches={approaches} expanded={expanded} setExpanded={setExpanded} setEditPerson={setEditPerson} deletePerson={deletePerson} noteDraft={noteDraft} setNoteDraft={setNoteDraft} addNote={addNote} deleteNote={deleteNote} />
-                ) : null;
-              }
-              const archive = roster.filter((p) => p.smashed || (p.status !== "active" && p.status !== "warming"));
-              return archive.length > 0 ? (
-                <SectionList label="SMASHED" people={archive} approaches={approaches} expanded={expanded} setExpanded={setExpanded} setEditPerson={setEditPerson} deletePerson={deletePerson} noteDraft={noteDraft} setNoteDraft={setNoteDraft} addNote={addNote} deleteNote={deleteNote} />
-              ) : (
-                <EmptyState text="Nothing in the archive yet." />
-              );
-            })()}
-
-            {roster.length > 0 && <button onClick={exportRoster} style={{ ...btnGhost, marginTop: 16 }}><Download size={13} /> Export CSV</button>}
-          </div>
-        )}
-
         {tab === "approaches" && (
           <ApproachesTab
-            approaches={approaches} roster={roster}
+            approaches={approaches}
             onEdit={setEditApproach} onDelete={deleteApproach} onUpdate={updateApproach}
-            onAddToRoster={addToRoster}
             confirmReset={confirmReset} setConfirmReset={setConfirmReset} onReset={resetApproaches}
             onExport={exportApproaches}
           />
         )}
       </div>
 
-      {tab !== "overview" && (
-        <button onClick={() => (tab === "roster" ? setAddPersonDraft({}) : setShowAddApproach(true))} style={fab}>
+      {tab === "approaches" && (
+        <button onClick={() => setShowAddApproach(true)} style={fab}>
           <Plus size={24} color="#171210" />
         </button>
       )}
 
-      {addPersonDraft !== null && <PersonForm title="Add to roster" initial={addPersonDraft} approaches={approaches} onSave={addPerson} onClose={() => setAddPersonDraft(null)} />}
-      {editPerson && <PersonForm title="Edit" initial={editPerson} approaches={approaches} onSave={(data) => { updatePerson(editPerson.id, data); setEditPerson(null); }} onClose={() => setEditPerson(null)} />}
       {showAddApproach && <ApproachForm title="Log approach" onSave={addApproach} onClose={() => setShowAddApproach(false)} />}
       {editApproach && <ApproachForm title="Edit approach" initial={editApproach} onSave={(data) => { updateApproach(editApproach.id, data); setEditApproach(null); }} onClose={() => setEditApproach(null)} />}
     </div>
@@ -491,86 +369,7 @@ function StatCard({ label, value, warn }) {
 
 function EmptyState({ text }) { return <div style={{ textAlign: "center", padding: "40px 0", color: COLORS.inkFaint, fontSize: 14 }}>{text}</div>; }
 
-function SectionList({ label, people, approaches, expanded, setExpanded, setEditPerson, deletePerson, noteDraft, setNoteDraft, addNote, deleteNote }) {
-  return (
-    <div style={{ marginBottom: 18 }}>
-      <div style={monoLabel}>{label}</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 8 }}>
-        {people.map((p) => (
-          <PersonCard key={p.id} person={p} approaches={approaches} expanded={expanded === p.id} onToggle={() => setExpanded(expanded === p.id ? null : p.id)}
-            onEdit={() => setEditPerson(p)} onDelete={() => deletePerson(p.id)}
-            noteDraft={noteDraft[p.id] || ""} setNoteDraft={(v) => setNoteDraft((d) => ({ ...d, [p.id]: v }))}
-            onAddNote={() => addNote(p.id)} onDeleteNote={(nid) => deleteNote(p.id, nid)} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function PersonCard({ person, approaches, expanded, onToggle, onEdit, onDelete, noteDraft, setNoteDraft, onAddNote, onDeleteNote }) {
-  const s = STATUS[person.status] || STATUS.active;
-  const ch = CHANNEL[person.channel] || null;
-  const ChIcon = ch ? ch.icon : null;
-  const stale = person.status !== "closed" && person.status !== "inactive" && daysSince(person.lastContact) > STALE_DAYS;
-  const origin = person.sourceApproachId ? (approaches || []).find((a) => a.id === person.sourceApproachId) : null;
-
-  const daysLeft = person.leaveDate ? -daysSince(person.leaveDate) : null;
-  const leaving = daysLeft !== null && daysLeft >= 0 && person.status !== "closed" && person.status !== "inactive";
-  const leaveColor = leaving && daysLeft <= 7 ? COLORS.warn : COLORS.gold;
-
-  const daysUntilReturn = person.returnDate ? -daysSince(person.returnDate) : null;
-  const returning = person.status === "inactive" && daysUntilReturn !== null && daysUntilReturn >= 0;
-
-  return (
-    <div style={{ background: COLORS.surface, border: `1px solid ${stale ? COLORS.warn : COLORS.border}`, borderRadius: 10, overflow: "hidden" }}>
-      <div style={{ padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }} onClick={onToggle}>
-        <span style={{ width: 8, height: 8, borderRadius: "50%", background: s.color, flexShrink: 0 }} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontFamily: "Fraunces, serif", fontSize: 17, color: COLORS.ink, fontWeight: 600 }}>{person.name}</span>
-            {person.ownPlace === "yes" && <Home size={12} color={COLORS.inkMuted} />}
-            {person.smashed && <span style={{ fontSize: 10, fontFamily: "JetBrains Mono, monospace", padding: "1px 6px", borderRadius: 5, background: "rgba(138,63,74,0.2)", color: "#c97f8a" }}>SMASHED</span>}
-          </div>
-          <div style={{ fontSize: 12, color: COLORS.inkMuted, marginTop: 2, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-            <span>{s.label} · last contact {fmtDate(person.lastContact)}</span>
-            {ChIcon && <ChIcon size={11} color={COLORS.inkFaint} />}
-          </div>
-          {stale && <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 4, color: COLORS.warn, fontSize: 11 }}><AlertTriangle size={11} /> {daysSince(person.lastContact)} days since contact — reach out</div>}
-          {leaving && <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 4, color: leaveColor, fontSize: 11 }}><Clock size={11} /> {daysLeft === 0 ? "Leaving today" : `${daysLeft} day${daysLeft === 1 ? "" : "s"} left before she's gone`}</div>}
-          {returning && <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 4, color: COLORS.gold, fontSize: 11 }}><Clock size={11} /> {daysUntilReturn === 0 ? "Back today" : `Back in ${daysUntilReturn} day${daysUntilReturn === 1 ? "" : "s"}`}</div>}
-        </div>
-        {expanded ? <ChevronUp size={18} color={COLORS.inkFaint} /> : <ChevronDown size={18} color={COLORS.inkFaint} />}
-      </div>
-      {expanded && (
-        <div style={{ padding: "0 16px 16px", borderTop: `1px solid ${COLORS.border}` }}>
-          {origin && <div style={{ marginTop: 12, fontSize: 12, color: COLORS.inkMuted, display: "flex", alignItems: "center", gap: 5 }}><Link2 size={12} color={COLORS.inkFaint} /> From 100 Run · {fmtDate(origin.date)} · {labelFor(VENUE_TYPES, origin.venueType)}</div>}
-          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-            <button onClick={onEdit} style={btnGhost}><Pencil size={13} /> Edit</button>
-            <button onClick={onDelete} style={{ ...btnGhost, color: "#b0512e" }}><Trash2 size={13} /> Remove</button>
-          </div>
-          <div style={{ marginTop: 16 }}>
-            <div style={{ fontSize: 11, fontFamily: "JetBrains Mono, monospace", color: COLORS.inkFaint, letterSpacing: 1, marginBottom: 8 }}>NOTES</div>
-            <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-              <input value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && onAddNote()} placeholder="Add a note..." style={inputStyle} />
-              <button onClick={onAddNote} style={{ ...btnGhost, padding: "8px 12px" }}>Add</button>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 200, overflowY: "auto" }}>
-              {person.notes.length === 0 && <div style={{ fontSize: 12, color: COLORS.inkFaint }}>No notes yet.</div>}
-              {person.notes.map((n) => (
-                <div key={n.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 13, color: COLORS.ink }}>
-                  <div><span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: COLORS.inkFaint, marginRight: 6 }}>{fmtDate(n.date)}</span>{n.text}</div>
-                  <button onClick={() => onDeleteNote(n.id)} style={{ background: "none", border: "none", cursor: "pointer", flexShrink: 0 }}><X size={13} color={COLORS.inkFaint} /></button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ApproachesTab({ approaches, roster, onEdit, onDelete, onUpdate, onAddToRoster, confirmReset, setConfirmReset, onReset, onExport }) {
+function ApproachesTab({ approaches, onEdit, onDelete, onUpdate, confirmReset, setConfirmReset, onReset, onExport }) {
   const [filter, setFilter] = useState("all");
   const total = approaches.length;
 
@@ -610,9 +409,7 @@ function ApproachesTab({ approaches, roster, onEdit, onDelete, onUpdate, onAddTo
     return Object.values(groups).sort((a, b) => (a.date < b.date ? 1 : -1));
   })();
 
-  const auditioning = filtered.filter((e) => isSecured(e) && (e.followUp || "pending") === "still_talking");
   const securedAll = filtered.filter(isSecured);
-  const rosterIdsLinked = new Set(roster.map((p) => p.sourceApproachId).filter(Boolean));
 
   return (
     <div style={{ padding: 20 }}>
@@ -649,32 +446,6 @@ function ApproachesTab({ approaches, roster, onEdit, onDelete, onUpdate, onAddTo
                 <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: COLORS.ink }}>{n.count} approached · {n.secured} secured</div>
               </div>
             ))}
-          </div>
-        </div>
-      )}
-
-      {auditioning.length > 0 && (
-        <div style={{ marginBottom: 20 }}>
-          <div style={monoLabel}>AUDITIONING (STILL TALKING)</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
-            {auditioning.map((e) => {
-              const already = rosterIdsLinked.has(e.id);
-              return (
-                <div key={e.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "10px 14px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div>
-                      <div style={{ fontFamily: "Fraunces, serif", fontSize: 15, color: COLORS.ink, fontWeight: 600 }}>{e.name || "Unnamed"}</div>
-                      <div style={{ fontSize: 12, color: COLORS.inkMuted }}>{fmtDate(e.date)} · {labelFor(VENUE_TYPES, e.venueType)} · {labelFor(ETHNICITIES, e.ethnicity, e.ethnicityCustom)}</div>
-                    </div>
-                    {already ? (
-                      <span style={{ fontSize: 11, color: COLORS.inkFaint, display: "flex", alignItems: "center", gap: 4 }}><Link2 size={12} /> On roster</span>
-                    ) : (
-                      <button onClick={() => onAddToRoster(e)} style={{ ...btnGhost, color: COLORS.gold, borderColor: COLORS.gold }}><UserPlus size={13} /> Add to roster</button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
           </div>
         </div>
       )}
@@ -751,7 +522,7 @@ function ApproachesTab({ approaches, roster, onEdit, onDelete, onUpdate, onAddTo
           <div style={monoLabel}>ENTRIES</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 8 }}>
             {filtered.map((e) => (
-              <ApproachRow key={e.id} entry={e} roster={roster} onEdit={() => onEdit(e)} onDelete={() => onDelete(e.id)} onUpdate={(patch) => onUpdate(e.id, patch)} />
+              <ApproachRow key={e.id} entry={e} onEdit={() => onEdit(e)} onDelete={() => onDelete(e.id)} onUpdate={(patch) => onUpdate(e.id, patch)} />
             ))}
           </div>
         </>
@@ -800,9 +571,8 @@ function RateBarChart({ data }) {
 
 const tooltipStyle = { background: COLORS.surface2, border: `1px solid ${COLORS.border}`, borderRadius: 8, fontSize: 12, color: COLORS.ink };
 
-function ApproachRow({ entry, roster, onEdit, onDelete, onUpdate }) {
+function ApproachRow({ entry, onEdit, onDelete, onUpdate }) {
   const secured = isSecured(entry);
-  const linkedPerson = (roster || []).find((p) => p.sourceApproachId === entry.id);
   return (
     <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "12px 14px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -819,7 +589,6 @@ function ApproachRow({ entry, roster, onEdit, onDelete, onUpdate }) {
             {entry.makeOut && <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: 11, fontFamily: "JetBrains Mono, monospace", background: "rgba(138,63,74,0.2)", color: "#c97f8a" }}>MAKEOUT</span>}
             {entry.hadSexSameNight && <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: 11, fontFamily: "JetBrains Mono, monospace", background: "rgba(138,63,74,0.2)", color: "#c97f8a" }}>SAME-NIGHT</span>}
           </div>
-          {linkedPerson && <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 6, fontSize: 11, color: COLORS.inkMuted }}><Link2 size={11} color={COLORS.inkFaint} /> → Roster: {linkedPerson.name}</div>}
         </div>
         <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
           <button onClick={onEdit} style={iconBtn}><Pencil size={14} color={COLORS.inkFaint} /></button>
@@ -904,51 +673,6 @@ function SegToggle({ options, value, onChange }) {
   );
 }
 
-function PersonForm({ title, initial, approaches, onSave, onClose }) {
-  const [name, setName] = useState(initial?.name || "");
-  const [status, setStatus] = useState(initial?.status || "active");
-  const [ownPlace, setOwnPlace] = useState(initial?.ownPlace ?? "unknown");
-  const [smashed, setSmashed] = useState(initial?.smashed ?? false);
-  const [channel, setChannel] = useState(initial?.channel || "bars");
-  const [phone, setPhone] = useState(initial?.phone || "");
-  const [sourceApproachId, setSourceApproachId] = useState(initial?.sourceApproachId || "");
-  const [leaveDate, setLeaveDate] = useState(initial?.leaveDate || "");
-  const [returnDate, setReturnDate] = useState(initial?.returnDate || "");
-
-  const securedApproaches = (approaches || []).filter(isSecured).slice().sort((a, b) => (a.date < b.date ? 1 : -1));
-
-  return (
-    <Sheet title={title} onClose={onClose}>
-      <Field label="Name"><input value={name} onChange={(e) => setName(e.target.value)} style={inputStyle} placeholder="Name" /></Field>
-      <Field label="Phone number (optional)"><input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} style={inputStyle} placeholder="(555) 555-5555" /></Field>
-      <Field label="Status"><select value={status} onChange={(e) => setStatus(e.target.value)} style={inputStyle}>{STATUS_ORDER.map((s) => <option key={s} value={s}>{STATUS[s].label}</option>)}</select></Field>
-      <Field label="Has her own place or can host?">
-        <SegToggle options={OWN_PLACE} value={ownPlace} onChange={setOwnPlace} />
-      </Field>
-      <Field label="Smashed?">
-        <div style={{ display: "flex", gap: 8 }}>
-          <button type="button" onClick={() => setSmashed(true)} style={{ ...toggleBtn, ...(smashed ? toggleBtnActive : {}) }}>Yes</button>
-          <button type="button" onClick={() => setSmashed(false)} style={{ ...toggleBtn, ...(!smashed ? toggleBtnActive : {}) }}>No</button>
-        </div>
-      </Field>
-      <Field label="Found via"><select value={channel} onChange={(e) => setChannel(e.target.value)} style={inputStyle}>{CHANNEL_ORDER.map((c) => <option key={c} value={c}>{CHANNEL[c].label}</option>)}</select></Field>
-      {securedApproaches.length > 0 && (
-        <Field label="Originated from approach (optional)">
-          <select value={sourceApproachId} onChange={(e) => setSourceApproachId(e.target.value)} style={inputStyle}>
-            <option value="">— None / met independently —</option>
-            {securedApproaches.map((a) => <option key={a.id} value={a.id}>{fmtDate(a.date)} · {a.name ? a.name + " · " : ""}{labelFor(VENUE_TYPES, a.venueType)} · {labelFor(OUTCOMES, a.outcome, a.outcomeCustom)}</option>)}
-          </select>
-        </Field>
-      )}
-      <Field label="Leaving on (optional — for summer/temporary leads)"><input type="date" value={leaveDate} onChange={(e) => setLeaveDate(e.target.value)} style={inputStyle} /></Field>
-      {status === "inactive" && (
-        <Field label="Returns around (optional)"><input type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} style={inputStyle} /></Field>
-      )}
-      <button disabled={!name.trim()} onClick={() => name.trim() && onSave({ name: name.trim(), status, ownPlace, smashed, channel, phone: phone.trim() || null, sourceApproachId: sourceApproachId || null, leaveDate: leaveDate || null, returnDate: returnDate || null })} style={{ ...btnSolid, opacity: name.trim() ? 1 : 0.5 }}>Save</button>
-    </Sheet>
-  );
-}
-
 function Sheet({ title, children, onClose }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "flex-end", zIndex: 50 }} onClick={onClose}>
@@ -981,8 +705,7 @@ const toggleBtn = { flex: 1, background: COLORS.surface2, border: `1px solid ${C
 const toggleBtnActive = { background: COLORS.gold, color: "#171210", borderColor: COLORS.gold, fontWeight: 600 };
 const fab = { position: "fixed", bottom: 24, right: 20, width: 52, height: 52, borderRadius: "50%", background: COLORS.gold, border: "none", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 14px rgba(0,0,0,0.4)", cursor: "pointer" };
 
-
-createRoot(document.getElementById("root")).render(<RosterTracker />);
+createRoot(document.getElementById("root")).render(<FieldLog />);
 
 </script>
 </body>
