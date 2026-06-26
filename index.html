@@ -204,6 +204,7 @@ function FieldLog() {
       MadeOutSameNight: e.makeOut ? "Yes" : "No", HadSexSameNight: e.hadSexSameNight ? "Yes" : "No",
       Outcome: labelFor(OUTCOMES, e.outcome, e.outcomeCustom), FollowUp: labelFor(FOLLOWUPS, e.followUp || "pending"),
       Attractiveness: e.attractiveness, OverallRating: e.overallRating, Confidence: e.confidence || "",
+      ConvoQuality: e.convoQuality || "", SexualTension: e.sexualTension || "", DurationMinutes: e.duration || "",
       RejectionReason: e.rejectionReason ? labelFor(REJECTION_REASONS, e.rejectionReason, e.rejectionReasonCustom) : "",
       Notes: e.notes || "",
     })));
@@ -276,6 +277,12 @@ function FieldLog() {
   const avgAttrNot = avg(approaches.filter((e) => !isSecured(e)).map((e) => e.attractiveness));
   const avgRatingSecured = avg(approaches.filter(isSecured).map((e) => e.overallRating));
   const avgRatingNot = avg(approaches.filter((e) => !isSecured(e)).map((e) => e.overallRating));
+  const avgConvoSecured = avg(approaches.filter(isSecured).map((e) => e.convoQuality).filter(Boolean));
+  const avgConvoNot = avg(approaches.filter((e) => !isSecured(e)).map((e) => e.convoQuality).filter(Boolean));
+  const avgTensionSecured = avg(approaches.filter(isSecured).map((e) => e.sexualTension).filter(Boolean));
+  const avgTensionNot = avg(approaches.filter((e) => !isSecured(e)).map((e) => e.sexualTension).filter(Boolean));
+  const avgDurationSecured = avg(approaches.filter(isSecured).map((e) => e.duration).filter(Boolean));
+  const avgDurationNot = avg(approaches.filter((e) => !isSecured(e)).map((e) => e.duration).filter(Boolean));
 
   const confidenceLogged = approaches.filter((e) => e.confidence);
   const avgConfidence = avg(confidenceLogged.map((e) => e.confidence));
@@ -456,7 +463,10 @@ function FieldLog() {
                   <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "10px 14px" }}>
                     <div style={{ fontSize: 11, color: COLORS.inkFaint, marginBottom: 8 }}>Averages</div>
                     <div style={{ fontSize: 12, color: COLORS.ink, marginBottom: 4 }}>Attractiveness — secured: {avgAttrSecured} · not secured: {avgAttrNot}</div>
-                    <div style={{ fontSize: 12, color: COLORS.ink }}>Overall rating — secured: {avgRatingSecured} · not secured: {avgRatingNot}</div>
+                    <div style={{ fontSize: 12, color: COLORS.ink, marginBottom: 4 }}>Overall rating — secured: {avgRatingSecured} · not secured: {avgRatingNot}</div>
+                    {avgConvoSecured !== "—" && <div style={{ fontSize: 12, color: COLORS.ink, marginBottom: 4 }}>Conversation quality — secured: {avgConvoSecured} · not secured: {avgConvoNot}</div>}
+                    {avgTensionSecured !== "—" && <div style={{ fontSize: 12, color: COLORS.ink, marginBottom: 4 }}>Sexual tension — secured: {avgTensionSecured} · not secured: {avgTensionNot}</div>}
+                    {avgDurationSecured !== "—" && <div style={{ fontSize: 12, color: COLORS.ink }}>Interaction length (min) — secured: {avgDurationSecured} · not secured: {avgDurationNot}</div>}
                   </div>
                 </div>
               </>
@@ -781,6 +791,11 @@ function ApproachRow({ entry, onEdit, onDelete, onUpdate }) {
             {entry.timeOfNight ? ` · ${labelFor(TIME_OF_NIGHT, entry.timeOfNight)}` : ""}
           </div>
           <div style={{ fontSize: 12, color: COLORS.inkMuted, marginTop: 2 }}>Interest: {labelFor(INITIAL_INTEREST, entry.initialInterest)} · Attr {entry.attractiveness}/10 · Rating {entry.overallRating}/10{entry.confidence ? ` · Confidence ${entry.confidence}/10` : ""}</div>
+          {(entry.convoQuality || entry.sexualTension || entry.duration) && (
+            <div style={{ fontSize: 12, color: COLORS.inkMuted, marginTop: 2 }}>
+              {entry.convoQuality ? `Convo ${entry.convoQuality}/10` : ""}{entry.convoQuality && entry.sexualTension ? " · " : ""}{entry.sexualTension ? `Tension ${entry.sexualTension}/10` : ""}{(entry.convoQuality || entry.sexualTension) && entry.duration ? " · " : ""}{entry.duration ? `${entry.duration} min` : ""}
+            </div>
+          )}
           <div style={{ fontSize: 12, color: COLORS.inkMuted, marginTop: 2 }}>Opener: {labelFor(OPENERS, entry.opener, entry.openerCustom)}</div>
           <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
             <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: 11, fontFamily: "JetBrains Mono, monospace", background: secured ? "rgba(201,154,62,0.15)" : COLORS.surface2, color: secured ? COLORS.gold : COLORS.inkFaint }}>
@@ -829,6 +844,9 @@ function ApproachForm({ title, initial, onSave, onClose }) {
   const [attractiveness, setAttractiveness] = useState(initial?.attractiveness ?? 5);
   const [overallRating, setOverallRating] = useState(initial?.overallRating ?? 5);
   const [confidence, setConfidence] = useState(initial?.confidence ?? 5);
+  const [duration, setDuration] = useState(initial?.duration ?? "");
+  const [convoQuality, setConvoQuality] = useState(initial?.convoQuality ?? 5);
+  const [sexualTension, setSexualTension] = useState(initial?.sexualTension ?? 5);
   const [rejectionReason, setRejectionReason] = useState(initial?.rejectionReason || "");
   const [rejectionReasonCustom, setRejectionReasonCustom] = useState(initial?.rejectionReasonCustom || "");
   const [notes, setNotes] = useState(initial?.notes || "");
@@ -872,6 +890,9 @@ function ApproachForm({ title, initial, onSave, onClose }) {
       <Field label={`Attractiveness: ${attractiveness}/10`}><input type="range" min="1" max="10" value={attractiveness} onChange={(e) => setAttractiveness(Number(e.target.value))} style={{ width: "100%" }} /></Field>
       <Field label={`Overall interaction rating: ${overallRating}/10`}><input type="range" min="1" max="10" value={overallRating} onChange={(e) => setOverallRating(Number(e.target.value))} style={{ width: "100%" }} /></Field>
       <Field label={`Confidence going in: ${confidence}/10`}><input type="range" min="1" max="10" value={confidence} onChange={(e) => setConfidence(Number(e.target.value))} style={{ width: "100%" }} /></Field>
+      <Field label={`Conversation quality: ${convoQuality}/10`}><input type="range" min="1" max="10" value={convoQuality} onChange={(e) => setConvoQuality(Number(e.target.value))} style={{ width: "100%" }} /></Field>
+      <Field label={`Sexual tension: ${sexualTension}/10`}><input type="range" min="1" max="10" value={sexualTension} onChange={(e) => setSexualTension(Number(e.target.value))} style={{ width: "100%" }} /></Field>
+      <Field label="Interaction length (minutes, optional)"><input type="number" min="0" value={duration} onChange={(e) => setDuration(e.target.value)} style={inputStyle} placeholder="e.g. 8" /></Field>
       {outcome === "nothing" && (
         <Field label="Rejection reason (optional)">
           <select value={rejectionReason} onChange={(e) => setRejectionReason(e.target.value)} style={inputStyle}>
@@ -882,7 +903,7 @@ function ApproachForm({ title, initial, onSave, onClose }) {
         </Field>
       )}
       <Field label="Notes"><textarea value={notes} onChange={(e) => setNotes(e.target.value)} style={{ ...inputStyle, minHeight: 70, resize: "none" }} placeholder="Context, what happened..." /></Field>
-      <button onClick={() => onSave({ date, name: name.trim(), venueType, venueName: venueName.trim(), timeOfNight, groupContext, preApproachSignal, ethnicity, ethnicityCustom, initialInterest, makeOut, hadSexSameNight, opener, openerCustom, outcome, outcomeCustom, attractiveness, overallRating, confidence, rejectionReason: outcome === "nothing" ? rejectionReason : "", rejectionReasonCustom, notes: notes.trim() })} style={btnSolid}>Save</button>
+      <button onClick={() => onSave({ date, name: name.trim(), venueType, venueName: venueName.trim(), timeOfNight, groupContext, preApproachSignal, ethnicity, ethnicityCustom, initialInterest, makeOut, hadSexSameNight, opener, openerCustom, outcome, outcomeCustom, attractiveness, overallRating, confidence, duration: duration ? Number(duration) : "", convoQuality, sexualTension, rejectionReason: outcome === "nothing" ? rejectionReason : "", rejectionReasonCustom, notes: notes.trim() })} style={btnSolid}>Save</button>
     </Sheet>
   );
 }
