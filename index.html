@@ -128,6 +128,17 @@ function bestWorst(rates) {
   const sorted = [...rates].sort((a, b) => b.rate - a.rate);
   return { best: sorted[0], worst: sorted[sorted.length - 1] };
 }
+function bucketScale10(val) {
+  if (val <= 4) return "Low (1-4)";
+  if (val <= 7) return "Mid (5-7)";
+  return "High (8-10)";
+}
+function bucketDuration(min) {
+  if (min < 5) return "<5 min";
+  if (min < 10) return "5-10 min";
+  if (min < 20) return "10-20 min";
+  return "20+ min";
+}
 function crossTabRate(entries, keyFnA, keyFnB) {
   const groups = {};
   entries.forEach((e) => {
@@ -226,6 +237,10 @@ function FieldLog() {
   const weekdayRates = groupRate(approaches, (e) => weekdayOf(e.date));
   const groupContextRates = groupRate(approaches.filter((e) => e.groupContext), (e) => labelFor(GROUP_CONTEXT, e.groupContext));
   const preApproachRates = groupRate(approaches.filter((e) => e.preApproachSignal), (e) => labelFor(PRE_APPROACH_SIGNAL, e.preApproachSignal));
+  const hadSexRates = groupRate(approaches, (e) => (e.hadSexSameNight ? "Same-night sex" : "No same-night sex"));
+  const convoQualityRates = groupRate(approaches.filter((e) => e.convoQuality), (e) => bucketScale10(e.convoQuality));
+  const sexualTensionRates = groupRate(approaches.filter((e) => e.sexualTension), (e) => bucketScale10(e.sexualTension));
+  const durationRates = groupRate(approaches.filter((e) => e.duration), (e) => bucketDuration(e.duration));
 
   const openerByVenue = crossTabRate(approaches, (e) => labelFor(OPENERS, e.opener, e.openerCustom), (e) => labelFor(VENUE_TYPES, e.venueType));
   const openerByInterest = crossTabRate(approaches, (e) => labelFor(OPENERS, e.opener, e.openerCustom), (e) => labelFor(INITIAL_INTEREST, e.initialInterest));
@@ -259,6 +274,10 @@ function FieldLog() {
     { label: "Day of week", bw: bestWorst(weekdayRates) },
     { label: "Group context", bw: bestWorst(groupContextRates) },
     { label: "Pre-approach signal", bw: bestWorst(preApproachRates) },
+    { label: "Same-night sex", bw: bestWorst(hadSexRates) },
+    { label: "Conversation quality", bw: bestWorst(convoQualityRates) },
+    { label: "Sexual tension", bw: bestWorst(sexualTensionRates) },
+    { label: "Interaction length", bw: bestWorst(durationRates) },
   ].filter((i) => i.bw);
 
   const outcomeDist = (() => {
@@ -446,17 +465,21 @@ function FieldLog() {
                 </div>
 
                 <div style={{ ...monoLabel, marginTop: 10 }}>FULL BREAKDOWN</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 8 }}>
-                  <BreakdownTable title="Secured rate by venue type" rows={venueRates} />
-                  {venueNameRates.length > 0 && <BreakdownTable title="Secured rate by specific venue" rows={venueNameRates} />}
-                  {timeOfNightRates.length > 0 && <BreakdownTable title="Secured rate by time of night" rows={timeOfNightRates} />}
-                  <BreakdownTable title="Secured rate by ethnicity" rows={ethnicityRates} />
-                  <BreakdownTable title="Secured rate by opener" rows={openerRates} />
-                  <BreakdownTable title="Secured rate by initial interest" rows={interestRates} />
-                  <BreakdownTable title="Secured rate by day of week (low n unless you vary nights)" rows={weekdayRates} />
-                  {groupContextRates.length > 0 && <BreakdownTable title="Secured rate by group context" rows={groupContextRates} />}
-                  {preApproachRates.length > 0 && <BreakdownTable title="Secured rate by pre-approach signal" rows={preApproachRates} />}
-                  <BreakdownTable title="Secured rate: makeout vs. no makeout" rows={makeoutRates} />
+                <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 8 }}>
+                  <ChartCard title="Secured rate by venue type"><RateBarChart data={venueRates} /></ChartCard>
+                  {venueNameRates.length > 0 && <ChartCard title="Secured rate by specific venue"><RateBarChart data={venueNameRates} /></ChartCard>}
+                  {timeOfNightRates.length > 0 && <ChartCard title="Secured rate by time of night"><RateBarChart data={timeOfNightRates} /></ChartCard>}
+                  <ChartCard title="Secured rate by ethnicity"><RateBarChart data={ethnicityRates} /></ChartCard>
+                  <ChartCard title="Secured rate by opener"><RateBarChart data={openerRates} /></ChartCard>
+                  <ChartCard title="Secured rate by initial interest"><RateBarChart data={interestRates} /></ChartCard>
+                  <ChartCard title="Secured rate by day of week (low n unless you vary nights)"><RateBarChart data={weekdayRates} /></ChartCard>
+                  {groupContextRates.length > 0 && <ChartCard title="Secured rate by group context"><RateBarChart data={groupContextRates} /></ChartCard>}
+                  {preApproachRates.length > 0 && <ChartCard title="Secured rate by pre-approach signal"><RateBarChart data={preApproachRates} /></ChartCard>}
+                  <ChartCard title="Secured rate: makeout vs. no makeout"><RateBarChart data={makeoutRates} /></ChartCard>
+                  <ChartCard title="Secured rate: same-night sex vs. not"><RateBarChart data={hadSexRates} /></ChartCard>
+                  {convoQualityRates.length > 0 && <ChartCard title="Secured rate by conversation quality"><RateBarChart data={convoQualityRates} /></ChartCard>}
+                  {sexualTensionRates.length > 0 && <ChartCard title="Secured rate by sexual tension"><RateBarChart data={sexualTensionRates} /></ChartCard>}
+                  {durationRates.length > 0 && <ChartCard title="Secured rate by interaction length"><RateBarChart data={durationRates} /></ChartCard>}
                   <CountTable title="Outcome distribution (all approaches)" rows={outcomeDist} />
                   <CountTable title="Follow-up distribution (secured only)" rows={followUpDist} />
                   {rejectionReasonDist.length > 0 && <CountTable title="Rejection reasons (unsuccessful approaches)" rows={rejectionReasonDist} />}
