@@ -1,4 +1,991 @@
-<h2 style={{ fontFamily: "Fraunces, serif", fontSize: 20, color: COLORS.ink, margin: 0 }}>{title}</h2>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="theme-color" content="#171210" />
+<title>Field Log</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #171210; }
+  #root { min-height: 100vh; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.3.1",
+    "react-dom": "https://esm.sh/react-dom@18.3.1",
+    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+    "lucide-react": "https://esm.sh/lucide-react@0.383.0?external=react",
+    "recharts": "https://esm.sh/recharts@2.12.7?external=react,react-dom"
+  }
+}
+</script>
+
+<script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js"></script>
+
+<script type="text/babel" data-presets="react" data-type="module">
+import React, { useState, useEffect, useRef } from "react";
+import { createRoot } from "react-dom/client";
+import {
+  Plus, X, ChevronDown, ChevronUp, Trash2, Pencil,
+  RotateCcw, Download, TrendingUp, TrendingDown, Cloud, CloudOff, Settings, Check,
+} from "lucide-react";
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  ScatterChart, Scatter, PieChart, Pie, Cell, Legend, LineChart, Line,
+} from "recharts";
+
+const CLOUD_ENABLED = false;
+let db = null;
+
+const COLORS = {
+  bg: "#171210", surface: "#221b16", surface2: "#2a221b", border: "#3a2f26",
+  ink: "#f0e6d8", inkMuted: "#a8978a", inkFaint: "#6e6155", warn: "#b0512e", gold: "#c99a3e",
+};
+const PIE_COLORS = ["#8a8f5c", "#c99a3e", "#b0512e", "#6e6155", "#a8978a", "#5c534a"];
+
+const VENUE_TYPES = [
+  { id: "bar", label: "Bar" }, { id: "club", label: "Club" },
+  { id: "house_party", label: "House Party" }, { id: "street", label: "Street" },
+];
+const TIME_OF_NIGHT = [
+  { id: "early", label: "Early" }, { id: "mid", label: "Mid" }, { id: "late", label: "Late" },
+];
+const GROUP_CONTEXT = [
+  { id: "alone", label: "Alone" }, { id: "small_group", label: "Small group (2-3)" }, { id: "large_group", label: "Large group (4+)" },
+];
+const PRE_APPROACH_SIGNAL = [
+  { id: "clear_yes", label: "Clear interest before approach" }, { id: "neutral", label: "Neutral / no read" }, { id: "none", label: "No signal / cold approach" },
+];
+const APPROACH_ANGLE = [
+  { id: "front", label: "Front" }, { id: "side", label: "Side" }, { id: "back", label: "Back" },
+];
+const GOOD_LOOK = [
+  { id: "yes", label: "Yes, got a good look" }, { id: "brief", label: "Brief / partial look" }, { id: "no", label: "No, barely saw me" },
+];
+const EYE_CONTACT = [
+  { id: "yes", label: "Yes" }, { id: "no", label: "No" }, { id: "unsure", label: "Unsure" },
+];
+const INITIAL_INTEREST = [{ id: "high", label: "High" }, { id: "low", label: "Low" }];
+const OPENERS = [
+  { id: "direct", label: "Direct" }, { id: "situational", label: "Situational" },
+  { id: "observational", label: "Observational" }, { id: "compliment", label: "Compliment" },
+  { id: "opinion", label: "Opinion opener" }, { id: "other", label: "Other" },
+];
+const OUTCOMES = [
+  { id: "nothing", label: "Nothing" }, { id: "number", label: "Number" },
+  { id: "instagram", label: "Instagram" }, { id: "number_ig", label: "Number + Instagram" },
+  { id: "instant_date", label: "Instant date set" }, { id: "other", label: "Other" },
+];
+const FOLLOWUPS = [
+  { id: "pending", label: "Pending" }, { id: "no_reply", label: "No reply" },
+  { id: "flaked", label: "Flaked" }, { id: "still_talking", label: "Still talking" },
+  { id: "met_up", label: "Met up" }, { id: "had_sex", label: "Had sex" }, { id: "didnt_work_out", label: "Didn't work out" },
+];
+const REJECTION_REASONS = [
+  { id: "boyfriend", label: "Has boyfriend" }, { id: "not_interested", label: "Not interested" },
+  { id: "in_a_hurry", label: "In a hurry / leaving" }, { id: "with_group", label: "Too tied up with group" },
+  { id: "language", label: "Language barrier" }, { id: "age_gap", label: "Age gap" },
+  { id: "no_clear_reason", label: "No clear reason" }, { id: "other", label: "Other" },
+];
+const ETHNICITIES = [
+  { id: "black", label: "Black" }, { id: "white", label: "White" },
+  { id: "hispanic", label: "Hispanic/Latina" }, { id: "asian", label: "Asian" },
+  { id: "south_asian", label: "South Asian" }, { id: "middle_eastern", label: "Middle Eastern" },
+  { id: "mixed", label: "Mixed" }, { id: "other", label: "Other" },
+];
+
+function labelFor(list, id, custom) {
+  if (id === "other") return custom && custom.trim() ? custom.trim() : "Other";
+  const f = list.find((x) => x.id === id);
+  return f ? f.label : id;
+}
+function isSecured(entry) { return entry.outcome && entry.outcome !== "nothing"; }
+
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const todayISO = () => new Date().toISOString().slice(0, 10);
+const fmtDate = (iso) => {
+  if (!iso) return "—";
+  const d = new Date(iso + "T00:00:00");
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+};
+const daysSince = (iso) => {
+  if (!iso) return 9999;
+  const d = new Date(iso + "T00:00:00");
+  return Math.floor((Date.now() - d.getTime()) / 86400000);
+};
+const weekdayOf = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("en-US", { weekday: "short" });
+
+function groupRate(entries, keyFn) {
+  const groups = {};
+  entries.forEach((e) => {
+    const k = keyFn(e);
+    if (!groups[k]) groups[k] = { total: 0, secured: 0 };
+    groups[k].total += 1;
+    if (isSecured(e)) groups[k].secured += 1;
+  });
+  return Object.entries(groups).map(([name, v]) => ({ name, rate: v.total ? Math.round((v.secured / v.total) * 100) : 0, count: v.total }));
+}
+function bestWorst(rates) {
+  if (!rates.length) return null;
+  const sorted = [...rates].sort((a, b) => b.rate - a.rate);
+  return { best: sorted[0], worst: sorted[sorted.length - 1] };
+}
+function bucketScale10(val) {
+  if (val <= 4) return "Low (1-4)";
+  if (val <= 7) return "Mid (5-7)";
+  return "High (8-10)";
+}
+function bucketDuration(min) {
+  if (min < 5) return "<5 min";
+  if (min < 10) return "5-10 min";
+  if (min < 20) return "10-20 min";
+  return "20+ min";
+}
+function crossTabRate(entries, keyFnA, keyFnB) {
+  const groups = {};
+  entries.forEach((e) => {
+    const a = keyFnA(e), b = keyFnB(e);
+    const key = a + " · " + b;
+    if (!groups[key]) groups[key] = { total: 0, secured: 0 };
+    groups[key].total += 1;
+    if (isSecured(e)) groups[key].secured += 1;
+  });
+  return Object.entries(groups).map(([name, v]) => ({ name, rate: v.total ? Math.round((v.secured / v.total) * 100) : 0, count: v.total }));
+}
+
+function downloadCSV(filename, rows) {
+  if (!rows || !rows.length) return;
+  const headers = Object.keys(rows[0]);
+  const esc = (v) => '"' + String(v ?? "").replace(/"/g, '""') + '"';
+  const csv = [headers.join(","), ...rows.map((r) => headers.map((h) => esc(r[h])).join(","))].join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+async function safeGet(key) {
+  try { const raw = localStorage.getItem("fieldlog:" + key); return raw ? JSON.parse(raw) : null; }
+  catch { return null; }
+}
+async function safeSet(key, value) {
+  try { localStorage.setItem("fieldlog:" + key, JSON.stringify(value)); }
+  catch (e) { console.error("storage set failed", e); }
+}
+
+function FieldLog() {
+  const [tab, setTab] = useState("overview");
+  const [approaches, setApproaches] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [showAddApproach, setShowAddApproach] = useState(false);
+  const [editApproach, setEditApproach] = useState(null);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [showSync, setShowSync] = useState(false);
+  const [syncCode, setSyncCode] = useState("");
+  const [syncStatus, setSyncStatus] = useState("idle");
+  const syncTimer = useRef(null);
+
+  useEffect(() => {
+    (async () => {
+      const a = await safeGet("approach-log");
+      setApproaches(a || []);
+      setLoaded(true);
+    })();
+  }, []);
+
+  useEffect(() => { if (loaded) safeSet("approach-log", approaches); }, [approaches, loaded]);
+
+  async function saveSyncCode(code) {
+    const trimmed = code.trim();
+    setSyncCode(trimmed);
+    await safeSet("sync-code", trimmed);
+  }
+
+  function addApproach(entry) { setApproaches((a) => [{ id: uid(), followUp: "pending", ...entry }, ...a]); setShowAddApproach(false); }
+  function updateApproach(id, patch) { setApproaches((a) => a.map((e) => (e.id === id ? { ...e, ...patch } : e))); }
+  function deleteApproach(id) { setApproaches((a) => a.filter((e) => e.id !== id)); }
+  function resetApproaches() { setApproaches([]); setConfirmReset(false); }
+
+  function exportApproaches() {
+    downloadCSV("100-run.csv", approaches.map((e) => ({
+      Date: e.date, Name: e.name || "", VenueType: labelFor(VENUE_TYPES, e.venueType), VenueName: e.venueName || "",
+      TimeOfNight: labelFor(TIME_OF_NIGHT, e.timeOfNight), GroupContext: labelFor(GROUP_CONTEXT, e.groupContext), PreApproachSignal: labelFor(PRE_APPROACH_SIGNAL, e.preApproachSignal),
+      ApproachAngle: labelFor(APPROACH_ANGLE, e.approachAngle), GoodLook: labelFor(GOOD_LOOK, e.goodLook), EyeContact: labelFor(EYE_CONTACT, e.eyeContact),
+      Ethnicity: labelFor(ETHNICITIES, e.ethnicity, e.ethnicityCustom),
+      InitialInterest: labelFor(INITIAL_INTEREST, e.initialInterest), Opener: labelFor(OPENERS, e.opener, e.openerCustom), ExactOpener: e.exactOpener || "",
+      MadeOutSameNight: e.makeOut ? "Yes" : "No", HadSexSameNight: e.hadSexSameNight ? "Yes" : "No",
+      Outcome: labelFor(OUTCOMES, e.outcome, e.outcomeCustom), FollowUp: labelFor(FOLLOWUPS, e.followUp || "pending"),
+      Attractiveness: e.attractiveness, SelfLooksRating: e.selfLooksRating || "", OverallRating: e.overallRating, Confidence: e.confidence || "",
+      ConvoQuality: e.convoQuality || "", SexualTension: e.sexualTension || "", DurationMinutes: e.duration || "",
+      RejectionReason: e.rejectionReason ? labelFor(REJECTION_REASONS, e.rejectionReason, e.rejectionReasonCustom) : "",
+      Notes: e.notes || "",
+    })));
+  }
+
+  const sameNightSexCount = approaches.filter((e) => e.hadSexSameNight).length;
+  const totalApproaches = approaches.length;
+  const securedTotal = approaches.filter(isSecured).length;
+  const securedRateTotal = totalApproaches ? Math.round((securedTotal / totalApproaches) * 100) : 0;
+  const stillTalkingCount = approaches.filter((e) => isSecured(e) && (e.followUp || "pending") === "still_talking").length;
+  const makeOutCount = approaches.filter((e) => e.makeOut).length;
+
+  const venueRates = groupRate(approaches, (e) => labelFor(VENUE_TYPES, e.venueType));
+  const venueNameRates = groupRate(approaches.filter((e) => e.venueName && e.venueName.trim()), (e) => e.venueName.trim());
+  const timeOfNightRates = groupRate(approaches.filter((e) => e.timeOfNight), (e) => labelFor(TIME_OF_NIGHT, e.timeOfNight));
+  const ethnicityRates = groupRate(approaches, (e) => labelFor(ETHNICITIES, e.ethnicity, e.ethnicityCustom));
+  const openerRates = groupRate(approaches, (e) => labelFor(OPENERS, e.opener, e.openerCustom));
+  const interestRates = groupRate(approaches, (e) => labelFor(INITIAL_INTEREST, e.initialInterest));
+  const weekdayRates = groupRate(approaches, (e) => weekdayOf(e.date));
+  const groupContextRates = groupRate(approaches.filter((e) => e.groupContext), (e) => labelFor(GROUP_CONTEXT, e.groupContext));
+  const preApproachRates = groupRate(approaches.filter((e) => e.preApproachSignal), (e) => labelFor(PRE_APPROACH_SIGNAL, e.preApproachSignal));
+  const approachAngleRates = groupRate(approaches.filter((e) => e.approachAngle), (e) => labelFor(APPROACH_ANGLE, e.approachAngle));
+  const goodLookRates = groupRate(approaches.filter((e) => e.goodLook), (e) => labelFor(GOOD_LOOK, e.goodLook));
+  const eyeContactRates = groupRate(approaches.filter((e) => e.eyeContact), (e) => labelFor(EYE_CONTACT, e.eyeContact));
+  const hadSexRates = groupRate(approaches, (e) => (e.hadSexSameNight ? "Same-night sex" : "No same-night sex"));
+  const convoQualityRates = groupRate(approaches.filter((e) => e.convoQuality), (e) => bucketScale10(e.convoQuality));
+  const sexualTensionRates = groupRate(approaches.filter((e) => e.sexualTension), (e) => bucketScale10(e.sexualTension));
+  const durationRates = groupRate(approaches.filter((e) => e.duration), (e) => bucketDuration(e.duration));
+  const selfLooksRates = groupRate(approaches.filter((e) => e.selfLooksRating), (e) => bucketScale10(e.selfLooksRating));
+
+  const openerByVenue = crossTabRate(approaches, (e) => labelFor(OPENERS, e.opener, e.openerCustom), (e) => labelFor(VENUE_TYPES, e.venueType));
+  const openerByInterest = crossTabRate(approaches, (e) => labelFor(OPENERS, e.opener, e.openerCustom), (e) => labelFor(INITIAL_INTEREST, e.initialInterest));
+
+  const sortedByDate = [...approaches].sort((a, b) => (a.date < b.date ? -1 : 1));
+  const half = Math.floor(sortedByDate.length / 2);
+  const firstHalf = sortedByDate.slice(0, half);
+  const secondHalf = sortedByDate.slice(half);
+  const rateOf = (arr) => (arr.length ? Math.round((arr.filter(isSecured).length / arr.length) * 100) : null);
+  const firstHalfRate = rateOf(firstHalf);
+  const secondHalfRate = rateOf(secondHalf);
+  const progressionDelta = (firstHalfRate !== null && secondHalfRate !== null) ? secondHalfRate - firstHalfRate : null;
+
+  const rollingChunks = (() => {
+    const chunkSize = 10;
+    const chunks = [];
+    for (let i = 0; i < sortedByDate.length; i += chunkSize) {
+      const slice = sortedByDate.slice(i, i + chunkSize);
+      chunks.push({ name: `${i + 1}-${i + slice.length}`, rate: rateOf(slice) ?? 0 });
+    }
+    return chunks;
+  })();
+
+  const insights = [
+    { label: "Venue type", bw: bestWorst(venueRates) },
+    { label: "Specific venue", bw: bestWorst(venueNameRates) },
+    { label: "Time of night", bw: bestWorst(timeOfNightRates) },
+    { label: "Ethnicity", bw: bestWorst(ethnicityRates) },
+    { label: "Opener", bw: bestWorst(openerRates) },
+    { label: "Initial interest", bw: bestWorst(interestRates) },
+    { label: "Day of week", bw: bestWorst(weekdayRates) },
+    { label: "Group context", bw: bestWorst(groupContextRates) },
+    { label: "Pre-approach signal", bw: bestWorst(preApproachRates) },
+    { label: "Approach angle", bw: bestWorst(approachAngleRates) },
+    { label: "Did she get a good look", bw: bestWorst(goodLookRates) },
+    { label: "Eye contact before approach", bw: bestWorst(eyeContactRates) },
+    { label: "Same-night sex", bw: bestWorst(hadSexRates) },
+    { label: "Conversation quality", bw: bestWorst(convoQualityRates) },
+    { label: "Sexual tension", bw: bestWorst(sexualTensionRates) },
+    { label: "Interaction length", bw: bestWorst(durationRates) },
+    { label: "How you felt you looked that day", bw: bestWorst(selfLooksRates) },
+  ].filter((i) => i.bw);
+
+  const outcomeDist = (() => {
+    const groups = {};
+    approaches.forEach((e) => { const k = labelFor(OUTCOMES, e.outcome, e.outcomeCustom); groups[k] = (groups[k] || 0) + 1; });
+    return Object.entries(groups).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+  })();
+  const followUpDist = (() => {
+    const groups = {};
+    approaches.filter(isSecured).forEach((e) => { const k = labelFor(FOLLOWUPS, e.followUp || "pending"); groups[k] = (groups[k] || 0) + 1; });
+    return Object.entries(groups).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+  })();
+  const makeoutRates = groupRate(approaches, (e) => (e.makeOut ? "Made out" : "No makeout"));
+  const avg = (arr) => (arr.length ? (arr.reduce((s, v) => s + v, 0) / arr.length).toFixed(1) : "—");
+  const avgAttrSecured = avg(approaches.filter(isSecured).map((e) => e.attractiveness));
+  const avgAttrNot = avg(approaches.filter((e) => !isSecured(e)).map((e) => e.attractiveness));
+  const avgRatingSecured = avg(approaches.filter(isSecured).map((e) => e.overallRating));
+  const avgRatingNot = avg(approaches.filter((e) => !isSecured(e)).map((e) => e.overallRating));
+  const avgConvoSecured = avg(approaches.filter(isSecured).map((e) => e.convoQuality).filter(Boolean));
+  const avgConvoNot = avg(approaches.filter((e) => !isSecured(e)).map((e) => e.convoQuality).filter(Boolean));
+  const avgTensionSecured = avg(approaches.filter(isSecured).map((e) => e.sexualTension).filter(Boolean));
+  const avgTensionNot = avg(approaches.filter((e) => !isSecured(e)).map((e) => e.sexualTension).filter(Boolean));
+  const avgDurationSecured = avg(approaches.filter(isSecured).map((e) => e.duration).filter(Boolean));
+  const avgDurationNot = avg(approaches.filter((e) => !isSecured(e)).map((e) => e.duration).filter(Boolean));
+  const avgSelfLooksSecured = avg(approaches.filter(isSecured).map((e) => e.selfLooksRating).filter(Boolean));
+  const avgSelfLooksNot = avg(approaches.filter((e) => !isSecured(e)).map((e) => e.selfLooksRating).filter(Boolean));
+
+  const confidenceLogged = approaches.filter((e) => e.confidence);
+  const avgConfidence = avg(confidenceLogged.map((e) => e.confidence));
+  const confFirstHalf = sortedByDate.filter((e) => e.confidence).slice(0, Math.floor(sortedByDate.filter((e) => e.confidence).length / 2));
+  const confSecondHalf = sortedByDate.filter((e) => e.confidence).slice(Math.floor(sortedByDate.filter((e) => e.confidence).length / 2));
+  const avgConfFirst = confFirstHalf.length ? avg(confFirstHalf.map((e) => e.confidence)) : null;
+  const avgConfSecond = confSecondHalf.length ? avg(confSecondHalf.map((e) => e.confidence)) : null;
+  const confidenceRollingChunks = (() => {
+    const withConf = sortedByDate.filter((e) => e.confidence);
+    const chunkSize = 10;
+    const chunks = [];
+    for (let i = 0; i < withConf.length; i += chunkSize) {
+      const slice = withConf.slice(i, i + chunkSize);
+      const avgVal = slice.reduce((s, e) => s + e.confidence, 0) / slice.length;
+      chunks.push({ name: `${i + 1}-${i + slice.length}`, confidence: Math.round(avgVal * 10) / 10 });
+    }
+    return chunks;
+  })();
+
+  const rejectionReasonDist = (() => {
+    const groups = {};
+    approaches.filter((e) => !isSecured(e) && e.rejectionReason).forEach((e) => {
+      const k = labelFor(REJECTION_REASONS, e.rejectionReason, e.rejectionReasonCustom);
+      groups[k] = (groups[k] || 0) + 1;
+    });
+    return Object.entries(groups).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+  })();
+
+  return (
+    <div style={{ background: COLORS.bg, minHeight: "100vh", fontFamily: "Inter, sans-serif" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+        * { box-sizing: border-box; }
+        input, textarea, select { font-family: 'Inter', sans-serif; }
+        ::placeholder { color: ${COLORS.inkFaint}; }
+        input[type=range]{ accent-color: ${COLORS.gold}; }
+      `}</style>
+
+      <div style={{ maxWidth: 480, margin: "0 auto", paddingBottom: 100 }}>
+        <div style={{ padding: "24px 20px 16px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div>
+            <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: 2, color: COLORS.inkFaint, marginBottom: 4 }}>FIELD LOG</div>
+            <h1 style={{ fontFamily: "Fraunces, serif", fontSize: 28, fontWeight: 600, color: COLORS.ink, margin: 0 }}>100 Run</h1>
+          </div>
+          <button onClick={() => setShowSync(true)} style={{ background: "none", border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: 8, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+            <CloudOff size={16} color={COLORS.inkFaint} />
+          </button>
+        </div>
+
+        <div style={{ display: "flex", gap: 0, padding: "0 20px", borderBottom: `1px solid ${COLORS.border}` }}>
+          {[{ id: "overview", label: "Overview" }, { id: "approaches", label: "100 Run" }].map((t) => (
+            <button key={t.id} onClick={() => setTab(t.id)} style={{
+              background: "none", border: "none", padding: "10px 4px", marginRight: 24,
+              fontFamily: "Inter, sans-serif", fontSize: 14, fontWeight: 600,
+              color: tab === t.id ? COLORS.ink : COLORS.inkFaint,
+              borderBottom: tab === t.id ? `2px solid ${COLORS.gold}` : "2px solid transparent", cursor: "pointer",
+            }}>{t.label}</button>
+          ))}
+        </div>
+
+        {tab === "overview" && (
+          <div style={{ padding: 20 }}>
+            <div style={monoLabel}>100 RUN</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 8, marginBottom: 22 }}>
+              <StatCard label="Logged" value={`${totalApproaches}/100`} />
+              <StatCard label="Secured rate" value={`${securedRateTotal}%`} />
+              <StatCard label="Still talking" value={stillTalkingCount} />
+              <StatCard label="Same-night makeouts" value={makeOutCount} />
+              <StatCard label="Same-night sex" value={sameNightSexCount} />
+            </div>
+
+            {progressionDelta !== null && (
+              <>
+                <div style={monoLabel}>PROGRESSION</div>
+                <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "12px 14px", marginTop: 8, marginBottom: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ fontSize: 12, color: COLORS.inkMuted }}>First half: <span style={{ color: COLORS.ink, fontFamily: "JetBrains Mono, monospace" }}>{firstHalfRate}%</span></div>
+                    <div style={{ fontSize: 12, color: COLORS.inkMuted }}>Second half: <span style={{ color: COLORS.ink, fontFamily: "JetBrains Mono, monospace" }}>{secondHalfRate}%</span></div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4, color: progressionDelta >= 0 ? "#8a8f5c" : COLORS.warn, fontSize: 13, fontWeight: 600 }}>
+                      {progressionDelta >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+                      {progressionDelta >= 0 ? "+" : ""}{progressionDelta}%
+                    </div>
+                  </div>
+                  {rollingChunks.length > 1 && (
+                    <div style={{ marginTop: 12 }}>
+                      <ResponsiveContainer width="100%" height={120}>
+                        <LineChart data={rollingChunks} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
+                          <CartesianGrid stroke={COLORS.border} strokeDasharray="3 3" vertical={false} />
+                          <XAxis dataKey="name" stroke={COLORS.inkFaint} fontSize={10} tickLine={false} axisLine={{ stroke: COLORS.border }} />
+                          <YAxis stroke={COLORS.inkFaint} fontSize={10} tickLine={false} axisLine={false} domain={[0, 100]} unit="%" />
+                          <Tooltip contentStyle={tooltipStyle} />
+                          <Line type="monotone" dataKey="rate" stroke={COLORS.gold} strokeWidth={2} dot={{ r: 3 }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                      <div style={{ fontSize: 10, color: COLORS.inkFaint, marginTop: 2 }}>secured rate per 10 approaches, chronological</div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {confidenceLogged.length > 0 && (
+              <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "12px 14px", marginBottom: 22 }}>
+                <div style={{ fontSize: 11, color: COLORS.inkFaint, marginBottom: 6 }}>Confidence (avg {avgConfidence}/10{confidenceLogged.length < approaches.length ? `, n=${confidenceLogged.length}` : ""})</div>
+                {avgConfFirst !== null && avgConfSecond !== null && (
+                  <div style={{ fontSize: 12, color: COLORS.inkMuted, marginBottom: 8 }}>
+                    First half: <span style={{ color: COLORS.ink, fontFamily: "JetBrains Mono, monospace" }}>{avgConfFirst}</span> · Second half: <span style={{ color: COLORS.ink, fontFamily: "JetBrains Mono, monospace" }}>{avgConfSecond}</span>
+                  </div>
+                )}
+                {confidenceRollingChunks.length > 1 && (
+                  <ResponsiveContainer width="100%" height={110}>
+                    <LineChart data={confidenceRollingChunks} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
+                      <CartesianGrid stroke={COLORS.border} strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="name" stroke={COLORS.inkFaint} fontSize={10} tickLine={false} axisLine={{ stroke: COLORS.border }} />
+                      <YAxis stroke={COLORS.inkFaint} fontSize={10} tickLine={false} axisLine={false} domain={[0, 10]} />
+                      <Tooltip contentStyle={tooltipStyle} />
+                      <Line type="monotone" dataKey="confidence" stroke="#8a8f5c" strokeWidth={2} dot={{ r: 3 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
+                <div style={{ fontSize: 10, color: COLORS.inkFaint, marginTop: 2 }}>confidence going in, per 10 approaches, chronological — should trend up regardless of outcome</div>
+              </div>
+            )}
+
+            {insights.length > 0 && (
+              <>
+                <div style={monoLabel}>BEST &amp; WORST</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+                  {insights.map((i) => (
+                    <div key={i.label} style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "10px 14px" }}>
+                      <div style={{ fontSize: 11, color: COLORS.inkFaint, marginBottom: 6 }}>{i.label}</div>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                          <TrendingUp size={13} color="#8a8f5c" />
+                          <span style={{ fontSize: 13, color: COLORS.ink }}>{i.bw.best.name}</span>
+                          <span style={{ fontSize: 12, color: COLORS.inkMuted, fontFamily: "JetBrains Mono, monospace" }}>{i.bw.best.rate}% (n={i.bw.best.count})</span>
+                          {i.bw.best.count < 5 && <span style={{ fontSize: 9, fontFamily: "JetBrains Mono, monospace", color: COLORS.warn, border: `1px solid ${COLORS.warn}`, borderRadius: 4, padding: "0 4px" }}>LOW N</span>}
+                        </div>
+                        {i.bw.worst.name !== i.bw.best.name && (
+                          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                            <TrendingDown size={13} color={COLORS.warn} />
+                            <span style={{ fontSize: 13, color: COLORS.ink }}>{i.bw.worst.name}</span>
+                            <span style={{ fontSize: 12, color: COLORS.inkMuted, fontFamily: "JetBrains Mono, monospace" }}>{i.bw.worst.rate}% (n={i.bw.worst.count})</span>
+                            {i.bw.worst.count < 5 && <span style={{ fontSize: 9, fontFamily: "JetBrains Mono, monospace", color: COLORS.warn, border: `1px solid ${COLORS.warn}`, borderRadius: 4, padding: "0 4px" }}>LOW N</span>}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+            {insights.length === 0 && <EmptyState text="Log some approaches in 100 Run to see best/worst breakdowns here." />}
+
+            {approaches.length > 0 && (
+              <>
+                <div style={{ ...monoLabel, marginTop: 22 }}>CROSS-TABS</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 8, marginBottom: 12 }}>
+                  <BreakdownTable title="Opener × venue type secured rate" rows={openerByVenue} />
+                  <BreakdownTable title="Opener × initial interest secured rate" rows={openerByInterest} />
+                </div>
+
+                <div style={{ ...monoLabel, marginTop: 10 }}>FULL BREAKDOWN</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 8 }}>
+                  <ChartCard title="Secured rate by venue type"><RateBarChart data={venueRates} /></ChartCard>
+                  {venueNameRates.length > 0 && <ChartCard title="Secured rate by specific venue"><RateBarChart data={venueNameRates} /></ChartCard>}
+                  {timeOfNightRates.length > 0 && <ChartCard title="Secured rate by time of night"><RateBarChart data={timeOfNightRates} /></ChartCard>}
+                  <ChartCard title="Secured rate by ethnicity"><RateBarChart data={ethnicityRates} /></ChartCard>
+                  <ChartCard title="Secured rate by opener"><RateBarChart data={openerRates} /></ChartCard>
+                  <ChartCard title="Secured rate by initial interest"><RateBarChart data={interestRates} /></ChartCard>
+                  <ChartCard title="Secured rate by day of week (low n unless you vary nights)"><RateBarChart data={weekdayRates} /></ChartCard>
+                  {groupContextRates.length > 0 && <ChartCard title="Secured rate by group context"><RateBarChart data={groupContextRates} /></ChartCard>}
+                  {preApproachRates.length > 0 && <ChartCard title="Secured rate by pre-approach signal"><RateBarChart data={preApproachRates} /></ChartCard>}
+                  {approachAngleRates.length > 0 && <ChartCard title="Secured rate by approach angle"><RateBarChart data={approachAngleRates} /></ChartCard>}
+                  {goodLookRates.length > 0 && <ChartCard title="Secured rate by whether she got a good look"><RateBarChart data={goodLookRates} /></ChartCard>}
+                  {eyeContactRates.length > 0 && <ChartCard title="Secured rate by eye contact before approach"><RateBarChart data={eyeContactRates} /></ChartCard>}
+                  <ChartCard title="Secured rate: makeout vs. no makeout"><RateBarChart data={makeoutRates} /></ChartCard>
+                  <ChartCard title="Secured rate: same-night sex vs. not"><RateBarChart data={hadSexRates} /></ChartCard>
+                  {convoQualityRates.length > 0 && <ChartCard title="Secured rate by conversation quality"><RateBarChart data={convoQualityRates} /></ChartCard>}
+                  {sexualTensionRates.length > 0 && <ChartCard title="Secured rate by sexual tension"><RateBarChart data={sexualTensionRates} /></ChartCard>}
+                  {durationRates.length > 0 && <ChartCard title="Secured rate by interaction length"><RateBarChart data={durationRates} /></ChartCard>}
+                  {selfLooksRates.length > 0 && <ChartCard title="Secured rate by how you felt you looked that day"><RateBarChart data={selfLooksRates} /></ChartCard>}
+                  <CountTable title="Outcome distribution (all approaches)" rows={outcomeDist} />
+                  <CountTable title="Follow-up distribution (secured only)" rows={followUpDist} />
+                  {rejectionReasonDist.length > 0 && <CountTable title="Rejection reasons (unsuccessful approaches)" rows={rejectionReasonDist} />}
+                  <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "10px 14px" }}>
+                    <div style={{ fontSize: 11, color: COLORS.inkFaint, marginBottom: 8 }}>Averages</div>
+                    <div style={{ fontSize: 12, color: COLORS.ink, marginBottom: 4 }}>Attractiveness — secured: {avgAttrSecured} · not secured: {avgAttrNot}</div>
+                    <div style={{ fontSize: 12, color: COLORS.ink, marginBottom: 4 }}>Overall rating — secured: {avgRatingSecured} · not secured: {avgRatingNot}</div>
+                    {avgConvoSecured !== "—" && <div style={{ fontSize: 12, color: COLORS.ink, marginBottom: 4 }}>Conversation quality — secured: {avgConvoSecured} · not secured: {avgConvoNot}</div>}
+                    {avgTensionSecured !== "—" && <div style={{ fontSize: 12, color: COLORS.ink, marginBottom: 4 }}>Sexual tension — secured: {avgTensionSecured} · not secured: {avgTensionNot}</div>}
+                    {avgDurationSecured !== "—" && <div style={{ fontSize: 12, color: COLORS.ink, marginBottom: 4 }}>Interaction length (min) — secured: {avgDurationSecured} · not secured: {avgDurationNot}</div>}
+                    {avgSelfLooksSecured !== "—" && <div style={{ fontSize: 12, color: COLORS.ink }}>How you felt you looked — secured: {avgSelfLooksSecured} · not secured: {avgSelfLooksNot}</div>}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {tab === "approaches" && (
+          <ApproachesTab
+            approaches={approaches}
+            onEdit={setEditApproach} onDelete={deleteApproach} onUpdate={updateApproach}
+            confirmReset={confirmReset} setConfirmReset={setConfirmReset} onReset={resetApproaches}
+            onExport={exportApproaches}
+          />
+        )}
+      </div>
+
+      {tab === "approaches" && (
+        <button onClick={() => setShowAddApproach(true)} style={fab}>
+          <Plus size={24} color="#171210" />
+        </button>
+      )}
+
+      {showAddApproach && <ApproachForm title="Log approach" onSave={addApproach} onClose={() => setShowAddApproach(false)} />}
+      {editApproach && <ApproachForm title="Edit approach" initial={editApproach} onSave={(data) => { updateApproach(editApproach.id, data); setEditApproach(null); }} onClose={() => setEditApproach(null)} />}
+      {showSync && <SyncSheet syncCode={syncCode} onSave={saveSyncCode} onClose={() => setShowSync(false)} cloudEnabled={CLOUD_ENABLED} status={syncStatus} />}
+    </div>
+  );
+}
+
+function SyncSheet({ syncCode, onSave, onClose, cloudEnabled, status }) {
+  const [draft, setDraft] = useState(syncCode || "");
+  return (
+    <Sheet title="Cloud sync" onClose={onClose}>
+      {!cloudEnabled && (
+        <div style={{ fontSize: 13, color: COLORS.inkMuted, marginBottom: 14, lineHeight: 1.5 }}>
+          Cloud sync isn't configured yet. A free Firebase project needs to be set up to enable it. Until then your data stays saved locally on this device only.
+        </div>
+      )}
+      {cloudEnabled && (
+        <>
+          <div style={{ fontSize: 13, color: COLORS.inkMuted, marginBottom: 14, lineHeight: 1.5 }}>
+            Pick a sync code (any word or phrase). Enter the same code on another device to pull in the same data.
+          </div>
+          <Field label="Sync code">
+            <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="e.g. a private phrase" style={inputStyle} />
+          </Field>
+          <button onClick={() => onSave(draft)} style={btnSolid}>
+            {status === "syncing" ? "Syncing..." : status === "synced" ? "Synced ✓" : "Save & Sync"}
+          </button>
+        </>
+      )}
+    </Sheet>
+  );
+}
+
+function BreakdownTable({ title, rows }) {
+  if (!rows || !rows.length) return null;
+  const sorted = [...rows].sort((a, b) => b.rate - a.rate);
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "10px 14px" }}>
+      <div style={{ fontSize: 11, color: COLORS.inkFaint, marginBottom: 8 }}>{title}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {sorted.map((r) => {
+          const lowN = r.count < 5;
+          return (
+            <div key={r.name} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, opacity: lowN ? 0.6 : 1 }}>
+              <span style={{ color: COLORS.ink }}>{r.name}</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                {lowN && <span style={{ fontSize: 10, fontFamily: "JetBrains Mono, monospace", color: COLORS.warn, border: `1px solid ${COLORS.warn}`, borderRadius: 4, padding: "0 4px" }}>LOW N</span>}
+                <span style={{ color: COLORS.inkMuted, fontFamily: "JetBrains Mono, monospace" }}>{r.rate}% (n={r.count})</span>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function CountTable({ title, rows }) {
+  if (!rows || !rows.length) return null;
+  const total = rows.reduce((s, r) => s + r.count, 0);
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "10px 14px" }}>
+      <div style={{ fontSize: 11, color: COLORS.inkFaint, marginBottom: 8 }}>{title}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {rows.map((r) => (
+          <div key={r.name} style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+            <span style={{ color: COLORS.ink }}>{r.name}</span>
+            <span style={{ color: COLORS.inkMuted, fontFamily: "JetBrains Mono, monospace" }}>{r.count} ({total ? Math.round((r.count / total) * 100) : 0}%)</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function StatCard({ label, value, warn }) {
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${warn ? COLORS.warn : COLORS.border}`, borderRadius: 10, padding: "12px 14px", minWidth: 110, flex: "1 1 auto" }}>
+      <div style={{ fontSize: 11, color: COLORS.inkFaint, marginBottom: 4 }}>{label}</div>
+      <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 18, fontWeight: 700, color: warn ? COLORS.warn : COLORS.ink }}>{value}</div>
+    </div>
+  );
+}
+
+function EmptyState({ text }) { return <div style={{ textAlign: "center", padding: "40px 0", color: COLORS.inkFaint, fontSize: 14 }}>{text}</div>; }
+
+function ApproachesTab({ approaches, onEdit, onDelete, onUpdate, confirmReset, setConfirmReset, onReset, onExport }) {
+  const [filter, setFilter] = useState("all");
+  const total = approaches.length;
+
+  const filtered = approaches.filter((e) => {
+    if (filter === "all") return true;
+    const d = daysSince(e.date);
+    if (filter === "7") return d <= 6;
+    if (filter === "30") return d <= 29;
+    return true;
+  });
+
+  const securedCount = filtered.filter(isSecured).length;
+  const securedRate = filtered.length ? Math.round((securedCount / filtered.length) * 100) : 0;
+
+  const byVenue = groupRate(filtered, (e) => labelFor(VENUE_TYPES, e.venueType));
+  const byInterest = groupRate(filtered, (e) => labelFor(INITIAL_INTEREST, e.initialInterest));
+  const byEthnicity = groupRate(filtered, (e) => labelFor(ETHNICITIES, e.ethnicity, e.ethnicityCustom));
+  const byOpener = groupRate(filtered, (e) => labelFor(OPENERS, e.opener, e.openerCustom));
+
+  const followUpData = (() => {
+    const groups = {};
+    filtered.filter(isSecured).forEach((e) => { const k = labelFor(FOLLOWUPS, e.followUp || "pending"); groups[k] = (groups[k] || 0) + 1; });
+    return Object.entries(groups).map(([name, value]) => ({ name, value }));
+  })();
+
+  const scatterSecured = filtered.filter(isSecured).map((e) => ({ x: e.attractiveness, y: e.overallRating }));
+  const scatterNot = filtered.filter((e) => !isSecured(e)).map((e) => ({ x: e.attractiveness, y: e.overallRating }));
+
+  const byNight = (() => {
+    const groups = {};
+    filtered.forEach((e) => {
+      if (!groups[e.date]) groups[e.date] = { date: e.date, count: 0, secured: 0, venues: new Set() };
+      groups[e.date].count += 1;
+      if (isSecured(e)) groups[e.date].secured += 1;
+      groups[e.date].venues.add(e.venueName && e.venueName.trim() ? e.venueName.trim() : labelFor(VENUE_TYPES, e.venueType));
+    });
+    return Object.values(groups).sort((a, b) => (a.date < b.date ? 1 : -1));
+  })();
+
+  const securedAll = filtered.filter(isSecured);
+
+  return (
+    <div style={{ padding: 20 }}>
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+          <span style={monoLabel}>100 APPROACH RUN</span>
+          <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 20, fontWeight: 700, color: COLORS.ink }}>{String(total).padStart(3, "0")}/100</span>
+        </div>
+        <div style={{ height: 8, borderRadius: 4, background: COLORS.surface2, overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${Math.min(100, (total / 100) * 100)}%`, background: COLORS.gold }} />
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+        {[{ id: "all", label: "All time" }, { id: "7", label: "Last 7 days" }, { id: "30", label: "Last 30 days" }].map((f) => (
+          <button key={f.id} onClick={() => setFilter(f.id)} style={{ ...toggleBtn, flex: 1, fontSize: 12, padding: "8px", ...(filter === f.id ? toggleBtnActive : {}) }}>{f.label}</button>
+        ))}
+      </div>
+      <div style={{ fontSize: 12, color: COLORS.inkMuted, marginBottom: 20 }}>{securedCount} secured · {securedRate}% secured rate ({filtered.length} entries in view)</div>
+
+      {total === 0 && <EmptyState text="No approaches logged yet. Add one to start the run." />}
+      {total > 0 && filtered.length === 0 && <EmptyState text="No entries in this window." />}
+
+      {byNight.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={monoLabel}>BY NIGHT</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+            {byNight.map((n) => (
+              <div key={n.date} style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: COLORS.inkFaint }}>{fmtDate(n.date)}</div>
+                  <div style={{ fontSize: 12, color: COLORS.inkMuted, marginTop: 2 }}>{[...n.venues].join(", ")}</div>
+                </div>
+                <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: COLORS.ink }}>{n.count} approached · {n.secured} secured</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {securedAll.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={monoLabel}>FOLLOW-UP BOARD</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 8 }}>
+            {FOLLOWUPS.map((f) => {
+              const group = securedAll.filter((e) => (e.followUp || "pending") === f.id);
+              if (group.length === 0) return null;
+              return (
+                <div key={f.id}>
+                  <div style={{ fontSize: 11, color: COLORS.inkFaint, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
+                    {f.label} <span style={{ fontFamily: "JetBrains Mono, monospace" }}>({group.length})</span>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {group.map((e) => (
+                      <div key={e.id} style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 13, color: COLORS.ink, fontWeight: 600 }}>{e.name || "Unnamed"}</div>
+                          <div style={{ fontSize: 11, color: COLORS.inkMuted }}>{fmtDate(e.date)} · {e.venueName && e.venueName.trim() ? e.venueName.trim() : labelFor(VENUE_TYPES, e.venueType)}</div>
+                        </div>
+                        <select value={e.followUp || "pending"} onChange={(ev) => onUpdate(e.id, { followUp: ev.target.value })} style={{ ...inputStyle, width: "auto", padding: "4px 8px", fontSize: 12 }}>
+                          {FOLLOWUPS.map((ff) => <option key={ff.id} value={ff.id}>{ff.label}</option>)}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {filtered.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 18, marginBottom: 24 }}>
+          <ChartCard title="Secured rate by venue"><RateBarChart data={byVenue} /></ChartCard>
+          <ChartCard title="Secured rate by initial interest"><RateBarChart data={byInterest} /></ChartCard>
+          <ChartCard title="Secured rate by ethnicity"><RateBarChart data={byEthnicity} /></ChartCard>
+          <ChartCard title="Secured rate by opener"><RateBarChart data={byOpener} /></ChartCard>
+          {followUpData.length > 0 && (
+            <ChartCard title="Follow-up outcome breakdown">
+              <ResponsiveContainer width="100%" height={210}>
+                <PieChart>
+                  <Pie data={followUpData} dataKey="value" nameKey="name" outerRadius={68} label={{ fontSize: 11, fill: COLORS.ink }}>
+                    {followUpData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Legend wrapperStyle={{ fontSize: 11, color: COLORS.inkMuted }} />
+                </PieChart>
+              </ResponsiveContainer>
+            </ChartCard>
+          )}
+          <ChartCard title="Attractiveness vs. overall rating">
+            <ResponsiveContainer width="100%" height={210}>
+              <ScatterChart margin={{ top: 10, right: 10, bottom: 5, left: -10 }}>
+                <CartesianGrid stroke={COLORS.border} strokeDasharray="3 3" />
+                <XAxis type="number" dataKey="x" name="Attractiveness" domain={[0, 10]} stroke={COLORS.inkFaint} fontSize={11} tickLine={false} axisLine={{ stroke: COLORS.border }} />
+                <YAxis type="number" dataKey="y" name="Overall rating" domain={[0, 10]} stroke={COLORS.inkFaint} fontSize={11} tickLine={false} axisLine={false} />
+                <Tooltip contentStyle={tooltipStyle} cursor={{ strokeDasharray: "3 3" }} />
+                <Scatter name="Secured" data={scatterSecured} fill={COLORS.gold} />
+                <Scatter name="Not secured" data={scatterNot} fill={COLORS.inkFaint} />
+              </ScatterChart>
+            </ResponsiveContainer>
+            <div style={{ fontSize: 11, color: COLORS.inkFaint, marginTop: 4 }}>x = attractiveness (1–10) · y = overall rating (1–10) · gold = secured</div>
+          </ChartCard>
+        </div>
+      )}
+
+      {filtered.length > 0 && (
+        <>
+          <div style={monoLabel}>ENTRIES</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 8 }}>
+            {filtered.map((e) => (
+              <ApproachRow key={e.id} entry={e} onEdit={() => onEdit(e)} onDelete={() => onDelete(e.id)} onUpdate={(patch) => onUpdate(e.id, patch)} />
+            ))}
+          </div>
+        </>
+      )}
+
+      {total > 0 && <button onClick={onExport} style={{ ...btnGhost, marginTop: 16 }}><Download size={13} /> Export CSV</button>}
+
+      <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${COLORS.border}` }}>
+        {!confirmReset ? (
+          <button onClick={() => setConfirmReset(true)} style={{ ...btnGhost, color: COLORS.inkFaint }}><RotateCcw size={13} /> Reset run</button>
+        ) : (
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12, color: COLORS.warn }}>Wipe all {total} entries?</span>
+            <button onClick={onReset} style={{ ...btnGhost, color: COLORS.warn, borderColor: COLORS.warn }}>Yes, wipe it</button>
+            <button onClick={() => setConfirmReset(false)} style={btnGhost}>Cancel</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ChartCard({ title, children }) {
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "14px 12px 8px" }}>
+      <div style={{ fontSize: 12, color: COLORS.inkMuted, marginBottom: 6, paddingLeft: 4 }}>{title}</div>
+      {children}
+    </div>
+  );
+}
+
+function RateBarChart({ data }) {
+  if (!data.length) return <div style={{ fontSize: 12, color: COLORS.inkFaint, padding: "8px 4px" }}>No data yet.</div>;
+  return (
+    <ResponsiveContainer width="100%" height={170}>
+      <BarChart data={data} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
+        <CartesianGrid stroke={COLORS.border} strokeDasharray="3 3" vertical={false} />
+        <XAxis dataKey="name" stroke={COLORS.inkFaint} fontSize={11} tickLine={false} axisLine={{ stroke: COLORS.border }} />
+        <YAxis stroke={COLORS.inkFaint} fontSize={11} tickLine={false} axisLine={false} domain={[0, 100]} unit="%" />
+        <Tooltip contentStyle={tooltipStyle} formatter={(v, n, p) => [`${v}% (n=${p.payload.count})`, "secured"]} />
+        <Bar dataKey="rate" fill={COLORS.gold} radius={[4, 4, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+const tooltipStyle = { background: COLORS.surface2, border: `1px solid ${COLORS.border}`, borderRadius: 8, fontSize: 12, color: COLORS.ink };
+
+function ApproachRow({ entry, onEdit, onDelete, onUpdate }) {
+  const secured = isSecured(entry);
+  return (
+    <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 10, padding: "12px 14px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: COLORS.inkFaint }}>{fmtDate(entry.date)}</div>
+          {entry.name && <div style={{ fontFamily: "Fraunces, serif", fontSize: 14, color: COLORS.ink, fontWeight: 600, marginTop: 2 }}>{entry.name}</div>}
+          <div style={{ fontSize: 13, color: COLORS.ink, marginTop: 2 }}>
+            {entry.venueName && entry.venueName.trim() ? entry.venueName.trim() : labelFor(VENUE_TYPES, entry.venueType)} · {labelFor(ETHNICITIES, entry.ethnicity, entry.ethnicityCustom)}
+            {entry.timeOfNight ? ` · ${labelFor(TIME_OF_NIGHT, entry.timeOfNight)}` : ""}
+          </div>
+          {(entry.approachAngle || entry.goodLook || entry.eyeContact) && (
+            <div style={{ fontSize: 12, color: COLORS.inkMuted, marginTop: 2 }}>
+              {entry.approachAngle ? `Approached from ${labelFor(APPROACH_ANGLE, entry.approachAngle).toLowerCase()}` : ""}{entry.approachAngle && entry.eyeContact ? " · " : ""}{entry.eyeContact ? `Eye contact: ${labelFor(EYE_CONTACT, entry.eyeContact)}` : ""}{(entry.approachAngle || entry.eyeContact) && entry.goodLook ? " · " : ""}{entry.goodLook ? labelFor(GOOD_LOOK, entry.goodLook) : ""}
+            </div>
+          )}
+          <div style={{ fontSize: 12, color: COLORS.inkMuted, marginTop: 2 }}>Interest: {labelFor(INITIAL_INTEREST, entry.initialInterest)} · Attr {entry.attractiveness}/10 · Rating {entry.overallRating}/10{entry.confidence ? ` · Confidence ${entry.confidence}/10` : ""}{entry.selfLooksRating ? ` · My look ${entry.selfLooksRating}/10` : ""}</div>
+          {(entry.convoQuality || entry.sexualTension || entry.duration) && (
+            <div style={{ fontSize: 12, color: COLORS.inkMuted, marginTop: 2 }}>
+              {entry.convoQuality ? `Convo ${entry.convoQuality}/10` : ""}{entry.convoQuality && entry.sexualTension ? " · " : ""}{entry.sexualTension ? `Tension ${entry.sexualTension}/10` : ""}{(entry.convoQuality || entry.sexualTension) && entry.duration ? " · " : ""}{entry.duration ? `${entry.duration} min` : ""}
+            </div>
+          )}
+          <div style={{ fontSize: 12, color: COLORS.inkMuted, marginTop: 2 }}>Opener: {labelFor(OPENERS, entry.opener, entry.openerCustom)}</div>
+          {entry.exactOpener && <div style={{ fontSize: 13, color: COLORS.ink, marginTop: 4, fontStyle: "italic" }}>"{entry.exactOpener}"</div>}
+          <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+            <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: 11, fontFamily: "JetBrains Mono, monospace", background: secured ? "rgba(201,154,62,0.15)" : COLORS.surface2, color: secured ? COLORS.gold : COLORS.inkFaint }}>
+              {labelFor(OUTCOMES, entry.outcome, entry.outcomeCustom)}
+            </span>
+            {entry.rejectionReason && <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: 11, fontFamily: "JetBrains Mono, monospace", background: COLORS.surface2, color: COLORS.inkMuted }}>{labelFor(REJECTION_REASONS, entry.rejectionReason, entry.rejectionReasonCustom)}</span>}
+            {entry.makeOut && <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: 11, fontFamily: "JetBrains Mono, monospace", background: "rgba(138,63,74,0.2)", color: "#c97f8a" }}>MAKEOUT</span>}
+            {entry.hadSexSameNight && <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, fontSize: 11, fontFamily: "JetBrains Mono, monospace", background: "rgba(138,63,74,0.2)", color: "#c97f8a" }}>SAME-NIGHT</span>}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+          <button onClick={onEdit} style={iconBtn}><Pencil size={14} color={COLORS.inkFaint} /></button>
+          <button onClick={onDelete} style={iconBtn}><Trash2 size={14} color={COLORS.inkFaint} /></button>
+        </div>
+      </div>
+      {secured && (
+        <div style={{ marginTop: 10 }}>
+          <label style={{ fontSize: 10, fontFamily: "JetBrains Mono, monospace", color: COLORS.inkFaint, letterSpacing: 1 }}>FOLLOW-UP</label>
+          <select value={entry.followUp || "pending"} onChange={(e) => onUpdate({ followUp: e.target.value })} style={{ ...inputStyle, marginTop: 4, padding: "6px 10px", fontSize: 13 }}>
+            {FOLLOWUPS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+          </select>
+        </div>
+      )}
+      {entry.notes && <div style={{ fontSize: 13, color: COLORS.ink, marginTop: 8 }}>{entry.notes}</div>}
+    </div>
+  );
+}
+
+function ApproachForm({ title, initial, onSave, onClose }) {
+  const [date, setDate] = useState(initial?.date || todayISO());
+  const [name, setName] = useState(initial?.name || "");
+  const [venueType, setVenueType] = useState(initial?.venueType || "bar");
+  const [venueName, setVenueName] = useState(initial?.venueName || "");
+  const [timeOfNight, setTimeOfNight] = useState(initial?.timeOfNight || "");
+  const [groupContext, setGroupContext] = useState(initial?.groupContext || "");
+  const [preApproachSignal, setPreApproachSignal] = useState(initial?.preApproachSignal || "");
+  const [approachAngle, setApproachAngle] = useState(initial?.approachAngle || "");
+  const [goodLook, setGoodLook] = useState(initial?.goodLook || "");
+  const [eyeContact, setEyeContact] = useState(initial?.eyeContact || "");
+  const [exactOpener, setExactOpener] = useState(initial?.exactOpener || "");
+  const [ethnicity, setEthnicity] = useState(initial?.ethnicity || "white");
+  const [ethnicityCustom, setEthnicityCustom] = useState(initial?.ethnicityCustom || "");
+  const [initialInterest, setInitialInterest] = useState(initial?.initialInterest || "high");
+  const [makeOut, setMakeOut] = useState(initial?.makeOut ?? false);
+  const [hadSexSameNight, setHadSexSameNight] = useState(initial?.hadSexSameNight ?? false);
+  const [opener, setOpener] = useState(initial?.opener || "direct");
+  const [openerCustom, setOpenerCustom] = useState(initial?.openerCustom || "");
+  const [outcome, setOutcome] = useState(initial?.outcome || "nothing");
+  const [outcomeCustom, setOutcomeCustom] = useState(initial?.outcomeCustom || "");
+  const [attractiveness, setAttractiveness] = useState(initial?.attractiveness ?? 5);
+  const [selfLooksRating, setSelfLooksRating] = useState(initial?.selfLooksRating ?? 5);
+  const [overallRating, setOverallRating] = useState(initial?.overallRating ?? 5);
+  const [confidence, setConfidence] = useState(initial?.confidence ?? 5);
+  const [duration, setDuration] = useState(initial?.duration ?? "");
+  const [convoQuality, setConvoQuality] = useState(initial?.convoQuality ?? 5);
+  const [sexualTension, setSexualTension] = useState(initial?.sexualTension ?? 5);
+  const [rejectionReason, setRejectionReason] = useState(initial?.rejectionReason || "");
+  const [rejectionReasonCustom, setRejectionReasonCustom] = useState(initial?.rejectionReasonCustom || "");
+  const [notes, setNotes] = useState(initial?.notes || "");
+
+  return (
+    <Sheet title={title} onClose={onClose}>
+      <Field label="Date"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={inputStyle} /></Field>
+      <Field label="Name (if known)"><input value={name} onChange={(e) => setName(e.target.value)} style={inputStyle} placeholder="Optional" /></Field>
+      <Field label="Venue type">
+        <select value={venueType} onChange={(e) => setVenueType(e.target.value)} style={inputStyle}>{VENUE_TYPES.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}</select>
+      </Field>
+      <Field label="Specific venue name (optional)"><input value={venueName} onChange={(e) => setVenueName(e.target.value)} style={inputStyle} placeholder="e.g. Le Bain" /></Field>
+      <Field label="Time of night"><SegToggle options={TIME_OF_NIGHT} value={timeOfNight} onChange={setTimeOfNight} /></Field>
+      <Field label="Group context"><SegToggle options={GROUP_CONTEXT} value={groupContext} onChange={setGroupContext} /></Field>
+      <Field label="Pre-approach signal (before you walked up)"><SegToggle options={PRE_APPROACH_SIGNAL} value={preApproachSignal} onChange={setPreApproachSignal} /></Field>
+      <Field label="Approach angle"><SegToggle options={APPROACH_ANGLE} value={approachAngle} onChange={setApproachAngle} /></Field>
+      <Field label="Did she get a good look of you?"><SegToggle options={GOOD_LOOK} value={goodLook} onChange={setGoodLook} /></Field>
+      <Field label="Eye contact before you approached?"><SegToggle options={EYE_CONTACT} value={eyeContact} onChange={setEyeContact} /></Field>
+      <Field label="Ethnicity">
+        <select value={ethnicity} onChange={(e) => setEthnicity(e.target.value)} style={inputStyle}>{ETHNICITIES.map((e) => <option key={e.id} value={e.id}>{e.label}</option>)}</select>
+        {ethnicity === "other" && <input value={ethnicityCustom} onChange={(e) => setEthnicityCustom(e.target.value)} placeholder="Specify..." style={{ ...inputStyle, marginTop: 8 }} />}
+      </Field>
+      <Field label="Initial interest"><SegToggle options={INITIAL_INTEREST} value={initialInterest} onChange={setInitialInterest} /></Field>
+      <Field label="Made out same night?">
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" onClick={() => setMakeOut(true)} style={{ ...toggleBtn, ...(makeOut ? toggleBtnActive : {}) }}>Yes</button>
+          <button type="button" onClick={() => setMakeOut(false)} style={{ ...toggleBtn, ...(!makeOut ? toggleBtnActive : {}) }}>No</button>
+        </div>
+      </Field>
+      <Field label="Had sex same night?">
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" onClick={() => setHadSexSameNight(true)} style={{ ...toggleBtn, ...(hadSexSameNight ? toggleBtnActive : {}) }}>Yes</button>
+          <button type="button" onClick={() => setHadSexSameNight(false)} style={{ ...toggleBtn, ...(!hadSexSameNight ? toggleBtnActive : {}) }}>No</button>
+        </div>
+      </Field>
+      <Field label="Opener used">
+        <select value={opener} onChange={(e) => setOpener(e.target.value)} style={inputStyle}>{OPENERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</select>
+        {opener === "other" && <input value={openerCustom} onChange={(e) => setOpenerCustom(e.target.value)} placeholder="Specify..." style={{ ...inputStyle, marginTop: 8 }} />}
+      </Field>
+      <Field label="Exact opener (word for word, optional)"><textarea value={exactOpener} onChange={(e) => setExactOpener(e.target.value)} style={{ ...inputStyle, minHeight: 60, resize: "none" }} placeholder='e.g. "Hey, random question — ..."' /></Field>
+      <Field label="Outcome">
+        <select value={outcome} onChange={(e) => setOutcome(e.target.value)} style={inputStyle}>{OUTCOMES.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</select>
+        {outcome === "other" && <input value={outcomeCustom} onChange={(e) => setOutcomeCustom(e.target.value)} placeholder="Specify..." style={{ ...inputStyle, marginTop: 8 }} />}
+      </Field>
+      <Field label={`Attractiveness: ${attractiveness}/10`}><input type="range" min="1" max="10" value={attractiveness} onChange={(e) => setAttractiveness(Number(e.target.value))} style={{ width: "100%" }} /></Field>
+      <Field label={`How you felt you looked that day: ${selfLooksRating}/10`}><input type="range" min="1" max="10" value={selfLooksRating} onChange={(e) => setSelfLooksRating(Number(e.target.value))} style={{ width: "100%" }} /></Field>
+      <Field label={`Overall interaction rating: ${overallRating}/10`}><input type="range" min="1" max="10" value={overallRating} onChange={(e) => setOverallRating(Number(e.target.value))} style={{ width: "100%" }} /></Field>
+      <Field label={`Confidence going in: ${confidence}/10`}><input type="range" min="1" max="10" value={confidence} onChange={(e) => setConfidence(Number(e.target.value))} style={{ width: "100%" }} /></Field>
+      <Field label={`Conversation quality: ${convoQuality}/10`}><input type="range" min="1" max="10" value={convoQuality} onChange={(e) => setConvoQuality(Number(e.target.value))} style={{ width: "100%" }} /></Field>
+      <Field label={`Sexual tension: ${sexualTension}/10`}><input type="range" min="1" max="10" value={sexualTension} onChange={(e) => setSexualTension(Number(e.target.value))} style={{ width: "100%" }} /></Field>
+      <Field label="Interaction length (minutes, optional)"><input type="number" min="0" value={duration} onChange={(e) => setDuration(e.target.value)} style={inputStyle} placeholder="e.g. 8" /></Field>
+      {outcome === "nothing" && (
+        <Field label="Rejection reason (optional)">
+          <select value={rejectionReason} onChange={(e) => setRejectionReason(e.target.value)} style={inputStyle}>
+            <option value="">— Not specified —</option>
+            {REJECTION_REASONS.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+          </select>
+          {rejectionReason === "other" && <input value={rejectionReasonCustom} onChange={(e) => setRejectionReasonCustom(e.target.value)} placeholder="Specify..." style={{ ...inputStyle, marginTop: 8 }} />}
+        </Field>
+      )}
+      <Field label="Notes"><textarea value={notes} onChange={(e) => setNotes(e.target.value)} style={{ ...inputStyle, minHeight: 70, resize: "none" }} placeholder="Context, what happened..." /></Field>
+      <button onClick={() => onSave({ date, name: name.trim(), venueType, venueName: venueName.trim(), timeOfNight, groupContext, preApproachSignal, approachAngle, goodLook, eyeContact, ethnicity, ethnicityCustom, initialInterest, makeOut, hadSexSameNight, opener, openerCustom, exactOpener: exactOpener.trim(), outcome, outcomeCustom, attractiveness, selfLooksRating, overallRating, confidence, duration: duration ? Number(duration) : "", convoQuality, sexualTension, rejectionReason: outcome === "nothing" ? rejectionReason : "", rejectionReasonCustom, notes: notes.trim() })} style={btnSolid}>Save</button>
+    </Sheet>
+  );
+}
+
+function SegToggle({ options, value, onChange }) {
+  return (
+    <div style={{ display: "flex", gap: 8 }}>
+      {options.map((o) => <button key={o.id} type="button" onClick={() => onChange(o.id)} style={{ ...toggleBtn, ...(value === o.id ? toggleBtnActive : {}) }}>{o.label}</button>)}
+    </div>
+  );
+}
+
+function Sheet({ title, children, onClose }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "flex-end", zIndex: 50 }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: COLORS.surface, width: "100%", maxWidth: 480, margin: "0 auto", borderRadius: "16px 16px 0 0", padding: 20, maxHeight: "85vh", overflowY: "auto", borderTop: `1px solid ${COLORS.border}` }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <h2 style={{ fontFamily: "Fraunces, serif", fontSize: 20, color: COLORS.ink, margin: 0 }}>{title}</h2>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer" }}><X size={20} color={COLORS.inkFaint} /></button>
         </div>
         {children}
@@ -17,11 +1004,11 @@ function Field({ label, children }) {
 }
 
 const monoLabel = { fontFamily: "JetBrains Mono, monospace", fontSize: 11, letterSpacing: 1.5, color: COLORS.inkFaint };
-const inputStyle = { width: "100%", background: COLORS.surface2, border: 1px solid ${COLORS.border}, borderRadius: 8, padding: "10px 12px", color: COLORS.ink, fontSize: 14, outline: "none" };
-const btnGhost = { display: "flex", alignItems: "center", gap: 5, background: "none", border: 1px solid ${COLORS.border}, borderRadius: 7, padding: "6px 10px", fontSize: 12, color: COLORS.inkMuted, cursor: "pointer" };
+const inputStyle = { width: "100%", background: COLORS.surface2, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "10px 12px", color: COLORS.ink, fontSize: 14, outline: "none" };
+const btnGhost = { display: "flex", alignItems: "center", gap: 5, background: "none", border: `1px solid ${COLORS.border}`, borderRadius: 7, padding: "6px 10px", fontSize: 12, color: COLORS.inkMuted, cursor: "pointer" };
 const iconBtn = { background: "none", border: "none", cursor: "pointer", padding: 4 };
 const btnSolid = { width: "100%", background: COLORS.gold, border: "none", borderRadius: 8, padding: "12px", fontSize: 14, fontWeight: 600, color: "#171210", cursor: "pointer", marginTop: 4 };
-const toggleBtn = { flex: 1, background: COLORS.surface2, border: 1px solid ${COLORS.border}, borderRadius: 8, padding: "10px", fontSize: 13, color: COLORS.inkMuted, cursor: "pointer" };
+const toggleBtn = { flex: 1, background: COLORS.surface2, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "10px", fontSize: 13, color: COLORS.inkMuted, cursor: "pointer" };
 const toggleBtnActive = { background: COLORS.gold, color: "#171210", borderColor: COLORS.gold, fontWeight: 600 };
 const fab = { position: "fixed", bottom: 24, right: 20, width: 52, height: 52, borderRadius: "50%", background: COLORS.gold, border: "none", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 14px rgba(0,0,0,0.4)", cursor: "pointer" };
 
