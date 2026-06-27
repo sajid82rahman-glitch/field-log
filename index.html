@@ -72,6 +72,9 @@ const GOOD_LOOK = [
 const EYE_CONTACT = [
   { id: "yes", label: "Yes" }, { id: "no", label: "No" }, { id: "unsure", label: "Unsure" },
 ];
+const FACE_POSITION = [
+  { id: "face_to_face", label: "Face to face, most of the time" }, { id: "side_ear", label: "Mostly to her side/ear" }, { id: "mixed", label: "Mixed" },
+];
 const INITIAL_INTEREST = [{ id: "high", label: "High" }, { id: "low", label: "Low" }];
 const OPENERS = [
   { id: "direct", label: "Direct" }, { id: "situational", label: "Situational" },
@@ -219,7 +222,7 @@ function FieldLog() {
     downloadCSV("100-run.csv", approaches.map((e) => ({
       Date: e.date, Name: e.name || "", VenueType: labelFor(VENUE_TYPES, e.venueType), VenueName: e.venueName || "",
       TimeOfNight: labelFor(TIME_OF_NIGHT, e.timeOfNight), GroupContext: labelFor(GROUP_CONTEXT, e.groupContext), PreApproachSignal: labelFor(PRE_APPROACH_SIGNAL, e.preApproachSignal),
-      ApproachAngle: labelFor(APPROACH_ANGLE, e.approachAngle), GoodLook: labelFor(GOOD_LOOK, e.goodLook), EyeContact: labelFor(EYE_CONTACT, e.eyeContact),
+      ApproachAngle: labelFor(APPROACH_ANGLE, e.approachAngle), GoodLook: labelFor(GOOD_LOOK, e.goodLook), EyeContact: labelFor(EYE_CONTACT, e.eyeContact), FacePosition: labelFor(FACE_POSITION, e.facePosition),
       Ethnicity: labelFor(ETHNICITIES, e.ethnicity, e.ethnicityCustom),
       InitialInterest: labelFor(INITIAL_INTEREST, e.initialInterest), Opener: labelFor(OPENERS, e.opener, e.openerCustom), ExactOpener: e.exactOpener || "",
       MadeOutSameNight: e.makeOut ? "Yes" : "No", HadSexSameNight: e.hadSexSameNight ? "Yes" : "No",
@@ -250,6 +253,7 @@ function FieldLog() {
   const approachAngleRates = groupRate(approaches.filter((e) => e.approachAngle), (e) => labelFor(APPROACH_ANGLE, e.approachAngle));
   const goodLookRates = groupRate(approaches.filter((e) => e.goodLook), (e) => labelFor(GOOD_LOOK, e.goodLook));
   const eyeContactRates = groupRate(approaches.filter((e) => e.eyeContact), (e) => labelFor(EYE_CONTACT, e.eyeContact));
+  const facePositionRates = groupRate(approaches.filter((e) => e.facePosition), (e) => labelFor(FACE_POSITION, e.facePosition));
   const hadSexRates = groupRate(approaches, (e) => (e.hadSexSameNight ? "Same-night sex" : "No same-night sex"));
   const convoQualityRates = groupRate(approaches.filter((e) => e.convoQuality), (e) => bucketScale10(e.convoQuality));
   const sexualTensionRates = groupRate(approaches.filter((e) => e.sexualTension), (e) => bucketScale10(e.sexualTension));
@@ -291,6 +295,7 @@ function FieldLog() {
     { label: "Approach angle", bw: bestWorst(approachAngleRates) },
     { label: "Did she get a good look", bw: bestWorst(goodLookRates) },
     { label: "Eye contact before approach", bw: bestWorst(eyeContactRates) },
+    { label: "Face position during interaction", bw: bestWorst(facePositionRates) },
     { label: "Same-night sex", bw: bestWorst(hadSexRates) },
     { label: "Conversation quality", bw: bestWorst(convoQualityRates) },
     { label: "Sexual tension", bw: bestWorst(sexualTensionRates) },
@@ -498,6 +503,7 @@ function FieldLog() {
                   {approachAngleRates.length > 0 && <ChartCard title="Secured rate by approach angle"><RateBarChart data={approachAngleRates} /></ChartCard>}
                   {goodLookRates.length > 0 && <ChartCard title="Secured rate by whether she got a good look"><RateBarChart data={goodLookRates} /></ChartCard>}
                   {eyeContactRates.length > 0 && <ChartCard title="Secured rate by eye contact before approach"><RateBarChart data={eyeContactRates} /></ChartCard>}
+                  {facePositionRates.length > 0 && <ChartCard title="Secured rate by face position during interaction"><RateBarChart data={facePositionRates} /></ChartCard>}
                   <ChartCard title="Secured rate: makeout vs. no makeout"><RateBarChart data={makeoutRates} /></ChartCard>
                   <ChartCard title="Secured rate: same-night sex vs. not"><RateBarChart data={hadSexRates} /></ChartCard>
                   {convoQualityRates.length > 0 && <ChartCard title="Secured rate by conversation quality"><RateBarChart data={convoQualityRates} /></ChartCard>}
@@ -647,6 +653,7 @@ function ApproachesTab({ approaches, onEdit, onDelete, onUpdate, confirmReset, s
   const byApproachAngle = groupRate(filtered.filter((e) => e.approachAngle), (e) => labelFor(APPROACH_ANGLE, e.approachAngle));
   const byGoodLook = groupRate(filtered.filter((e) => e.goodLook), (e) => labelFor(GOOD_LOOK, e.goodLook));
   const byEyeContact = groupRate(filtered.filter((e) => e.eyeContact), (e) => labelFor(EYE_CONTACT, e.eyeContact));
+  const byFacePosition = groupRate(filtered.filter((e) => e.facePosition), (e) => labelFor(FACE_POSITION, e.facePosition));
   const byMakeout = groupRate(filtered, (e) => (e.makeOut ? "Made out" : "No makeout"));
   const byHadSex = groupRate(filtered, (e) => (e.hadSexSameNight ? "Same-night sex" : "No same-night sex"));
   const byConvoQuality = groupRate(filtered.filter((e) => e.convoQuality), (e) => bucketScale10(e.convoQuality));
@@ -763,6 +770,7 @@ function ApproachesTab({ approaches, onEdit, onDelete, onUpdate, confirmReset, s
           {byApproachAngle.length > 0 && <ChartCard title="Secured rate by approach angle"><RateBarChart data={byApproachAngle} /></ChartCard>}
           {byGoodLook.length > 0 && <ChartCard title="Secured rate by whether she got a good look"><RateBarChart data={byGoodLook} /></ChartCard>}
           {byEyeContact.length > 0 && <ChartCard title="Secured rate by eye contact before approach"><RateBarChart data={byEyeContact} /></ChartCard>}
+          {byFacePosition.length > 0 && <ChartCard title="Secured rate by face position during interaction"><RateBarChart data={byFacePosition} /></ChartCard>}
           <ChartCard title="Secured rate: makeout vs. no makeout"><RateBarChart data={byMakeout} /></ChartCard>
           <ChartCard title="Secured rate: same-night sex vs. not"><RateBarChart data={byHadSex} /></ChartCard>
           {byConvoQuality.length > 0 && <ChartCard title="Secured rate by conversation quality"><RateBarChart data={byConvoQuality} /></ChartCard>}
@@ -864,9 +872,9 @@ function ApproachRow({ entry, onEdit, onDelete, onUpdate }) {
             {entry.venueName && entry.venueName.trim() ? entry.venueName.trim() : labelFor(VENUE_TYPES, entry.venueType)} · {labelFor(ETHNICITIES, entry.ethnicity, entry.ethnicityCustom)}
             {entry.timeOfNight ? ` · ${labelFor(TIME_OF_NIGHT, entry.timeOfNight)}` : ""}
           </div>
-          {(entry.approachAngle || entry.goodLook || entry.eyeContact) && (
+          {(entry.approachAngle || entry.goodLook || entry.eyeContact || entry.facePosition) && (
             <div style={{ fontSize: 12, color: COLORS.inkMuted, marginTop: 2 }}>
-              {entry.approachAngle ? `Approached from ${labelFor(APPROACH_ANGLE, entry.approachAngle).toLowerCase()}` : ""}{entry.approachAngle && entry.eyeContact ? " · " : ""}{entry.eyeContact ? `Eye contact: ${labelFor(EYE_CONTACT, entry.eyeContact)}` : ""}{(entry.approachAngle || entry.eyeContact) && entry.goodLook ? " · " : ""}{entry.goodLook ? labelFor(GOOD_LOOK, entry.goodLook) : ""}
+              {entry.approachAngle ? `Approached from ${labelFor(APPROACH_ANGLE, entry.approachAngle).toLowerCase()}` : ""}{entry.approachAngle && entry.eyeContact ? " · " : ""}{entry.eyeContact ? `Eye contact: ${labelFor(EYE_CONTACT, entry.eyeContact)}` : ""}{(entry.approachAngle || entry.eyeContact) && entry.goodLook ? " · " : ""}{entry.goodLook ? labelFor(GOOD_LOOK, entry.goodLook) : ""}{(entry.approachAngle || entry.eyeContact || entry.goodLook) && entry.facePosition ? " · " : ""}{entry.facePosition ? labelFor(FACE_POSITION, entry.facePosition) : ""}
             </div>
           )}
           <div style={{ fontSize: 12, color: COLORS.inkMuted, marginTop: 2 }}>Interest: {labelFor(INITIAL_INTEREST, entry.initialInterest)} · Attr {entry.attractiveness}/10 · Rating {entry.overallRating}/10{entry.confidence ? ` · Confidence ${entry.confidence}/10` : ""}{entry.selfLooksRating ? ` · My look ${entry.selfLooksRating}/10` : ""}</div>
@@ -915,6 +923,7 @@ function ApproachForm({ title, initial, onSave, onClose }) {
   const [approachAngle, setApproachAngle] = useState(initial?.approachAngle || "");
   const [goodLook, setGoodLook] = useState(initial?.goodLook || "");
   const [eyeContact, setEyeContact] = useState(initial?.eyeContact || "");
+  const [facePosition, setFacePosition] = useState(initial?.facePosition || "");
   const [exactOpener, setExactOpener] = useState(initial?.exactOpener || "");
   const [ethnicity, setEthnicity] = useState(initial?.ethnicity || "white");
   const [ethnicityCustom, setEthnicityCustom] = useState(initial?.ethnicityCustom || "");
@@ -950,6 +959,7 @@ function ApproachForm({ title, initial, onSave, onClose }) {
       <Field label="Approach angle"><SegToggle options={APPROACH_ANGLE} value={approachAngle} onChange={setApproachAngle} /></Field>
       <Field label="Did she get a good look of you?"><SegToggle options={GOOD_LOOK} value={goodLook} onChange={setGoodLook} /></Field>
       <Field label="Eye contact before you approached?"><SegToggle options={EYE_CONTACT} value={eyeContact} onChange={setEyeContact} /></Field>
+      <Field label="Face position during interaction"><SegToggle options={FACE_POSITION} value={facePosition} onChange={setFacePosition} /></Field>
       <Field label="Ethnicity">
         <select value={ethnicity} onChange={(e) => setEthnicity(e.target.value)} style={inputStyle}>{ETHNICITIES.map((e) => <option key={e.id} value={e.id}>{e.label}</option>)}</select>
         {ethnicity === "other" && <input value={ethnicityCustom} onChange={(e) => setEthnicityCustom(e.target.value)} placeholder="Specify..." style={{ ...inputStyle, marginTop: 8 }} />}
@@ -993,7 +1003,7 @@ function ApproachForm({ title, initial, onSave, onClose }) {
         </Field>
       )}
       <Field label="Notes"><textarea value={notes} onChange={(e) => setNotes(e.target.value)} style={{ ...inputStyle, minHeight: 70, resize: "none" }} placeholder="Context, what happened..." /></Field>
-      <button onClick={() => onSave({ date, name: name.trim(), venueType, venueName: venueName.trim(), timeOfNight, groupContext, preApproachSignal, approachAngle, goodLook, eyeContact, ethnicity, ethnicityCustom, initialInterest, makeOut, hadSexSameNight, opener, openerCustom, exactOpener: exactOpener.trim(), outcome, outcomeCustom, attractiveness, selfLooksRating, overallRating, confidence, duration: duration ? Number(duration) : "", convoQuality, sexualTension, rejectionReason: outcome === "nothing" ? rejectionReason : "", rejectionReasonCustom, notes: notes.trim() })} style={btnSolid}>Save</button>
+      <button onClick={() => onSave({ date, name: name.trim(), venueType, venueName: venueName.trim(), timeOfNight, groupContext, preApproachSignal, approachAngle, goodLook, eyeContact, facePosition, ethnicity, ethnicityCustom, initialInterest, makeOut, hadSexSameNight, opener, openerCustom, exactOpener: exactOpener.trim(), outcome, outcomeCustom, attractiveness, selfLooksRating, overallRating, confidence, duration: duration ? Number(duration) : "", convoQuality, sexualTension, rejectionReason: outcome === "nothing" ? rejectionReason : "", rejectionReasonCustom, notes: notes.trim() })} style={btnSolid}>Save</button>
     </Sheet>
   );
 }
