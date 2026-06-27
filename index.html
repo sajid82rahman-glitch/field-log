@@ -75,6 +75,12 @@ const EYE_CONTACT = [
 const FACE_POSITION = [
   { id: "face_to_face", label: "Face to face, most of the time" }, { id: "side_ear", label: "Mostly to her side/ear" }, { id: "mixed", label: "Mixed" },
 ];
+const BAR_SUBTYPE = [
+  { id: "dancing", label: "Dancing area" }, { id: "sitting", label: "Sitting-down type" },
+];
+const STANDING_OR_SITTING = [
+  { id: "standing", label: "I was standing" }, { id: "sitting", label: "I was sitting" },
+];
 const INITIAL_INTEREST = [{ id: "high", label: "High" }, { id: "low", label: "Low" }];
 const OPENERS = [
   { id: "direct", label: "Direct" }, { id: "situational", label: "Situational" },
@@ -220,14 +226,14 @@ function FieldLog() {
 
   function exportApproaches() {
     downloadCSV("100-run.csv", approaches.map((e) => ({
-      Date: e.date, Name: e.name || "", VenueType: labelFor(VENUE_TYPES, e.venueType), VenueName: e.venueName || "",
+      Date: e.date, Name: e.name || "", VenueType: labelFor(VENUE_TYPES, e.venueType), BarSubtype: labelFor(BAR_SUBTYPE, e.barSubtype), StandingOrSitting: labelFor(STANDING_OR_SITTING, e.standingOrSitting), VenueName: e.venueName || "",
       TimeOfNight: labelFor(TIME_OF_NIGHT, e.timeOfNight), GroupContext: labelFor(GROUP_CONTEXT, e.groupContext), PreApproachSignal: labelFor(PRE_APPROACH_SIGNAL, e.preApproachSignal),
       ApproachAngle: labelFor(APPROACH_ANGLE, e.approachAngle), GoodLook: labelFor(GOOD_LOOK, e.goodLook), EyeContact: labelFor(EYE_CONTACT, e.eyeContact), FacePosition: labelFor(FACE_POSITION, e.facePosition),
       Ethnicity: labelFor(ETHNICITIES, e.ethnicity, e.ethnicityCustom),
       InitialInterest: labelFor(INITIAL_INTEREST, e.initialInterest), Opener: labelFor(OPENERS, e.opener, e.openerCustom), ExactOpener: e.exactOpener || "",
       MadeOutSameNight: e.makeOut ? "Yes" : "No", HadSexSameNight: e.hadSexSameNight ? "Yes" : "No",
       Outcome: labelFor(OUTCOMES, e.outcome, e.outcomeCustom), FollowUp: labelFor(FOLLOWUPS, e.followUp || "pending"),
-      Attractiveness: e.attractiveness, SelfLooksRating: e.selfLooksRating || "", OverallRating: e.overallRating, Confidence: e.confidence || "",
+      Attractiveness: e.attractiveness, SelfLooksRating: e.selfLooksRating || "", OverallRating: e.overallRating, Confidence: e.confidence || "", NoiseLevel: e.noiseLevel || "",
       ConvoQuality: e.convoQuality || "", SexualTension: e.sexualTension || "", DurationMinutes: e.duration || "",
       RejectionReason: e.rejectionReason ? labelFor(REJECTION_REASONS, e.rejectionReason, e.rejectionReasonCustom) : "",
       Notes: e.notes || "",
@@ -259,6 +265,9 @@ function FieldLog() {
   const sexualTensionRates = groupRate(approaches.filter((e) => e.sexualTension), (e) => bucketScale10(e.sexualTension));
   const durationRates = groupRate(approaches.filter((e) => e.duration), (e) => bucketDuration(e.duration));
   const selfLooksRates = groupRate(approaches.filter((e) => e.selfLooksRating), (e) => bucketScale10(e.selfLooksRating));
+  const noiseLevelRates = groupRate(approaches.filter((e) => e.noiseLevel), (e) => bucketScale10(e.noiseLevel));
+  const barSubtypeRates = groupRate(approaches.filter((e) => e.venueType === "bar" && e.barSubtype), (e) => labelFor(BAR_SUBTYPE, e.barSubtype));
+  const standingOrSittingRates = groupRate(approaches.filter((e) => e.standingOrSitting), (e) => labelFor(STANDING_OR_SITTING, e.standingOrSitting));
 
   const openerByVenue = crossTabRate(approaches, (e) => labelFor(OPENERS, e.opener, e.openerCustom), (e) => labelFor(VENUE_TYPES, e.venueType));
   const openerByInterest = crossTabRate(approaches, (e) => labelFor(OPENERS, e.opener, e.openerCustom), (e) => labelFor(INITIAL_INTEREST, e.initialInterest));
@@ -301,6 +310,9 @@ function FieldLog() {
     { label: "Sexual tension", bw: bestWorst(sexualTensionRates) },
     { label: "Interaction length", bw: bestWorst(durationRates) },
     { label: "How you felt you looked that day", bw: bestWorst(selfLooksRates) },
+    { label: "Venue noise level", bw: bestWorst(noiseLevelRates) },
+    { label: "Bar subtype", bw: bestWorst(barSubtypeRates) },
+    { label: "Standing or sitting when approaching", bw: bestWorst(standingOrSittingRates) },
   ].filter((i) => i.bw);
 
   const outcomeDist = (() => {
@@ -327,6 +339,8 @@ function FieldLog() {
   const avgDurationNot = avg(approaches.filter((e) => !isSecured(e)).map((e) => e.duration).filter(Boolean));
   const avgSelfLooksSecured = avg(approaches.filter(isSecured).map((e) => e.selfLooksRating).filter(Boolean));
   const avgSelfLooksNot = avg(approaches.filter((e) => !isSecured(e)).map((e) => e.selfLooksRating).filter(Boolean));
+  const avgNoiseSecured = avg(approaches.filter(isSecured).map((e) => e.noiseLevel).filter(Boolean));
+  const avgNoiseNot = avg(approaches.filter((e) => !isSecured(e)).map((e) => e.noiseLevel).filter(Boolean));
 
   const confidenceLogged = approaches.filter((e) => e.confidence);
   const avgConfidence = avg(confidenceLogged.map((e) => e.confidence));
@@ -510,6 +524,9 @@ function FieldLog() {
                   {sexualTensionRates.length > 0 && <ChartCard title="Secured rate by sexual tension"><RateBarChart data={sexualTensionRates} /></ChartCard>}
                   {durationRates.length > 0 && <ChartCard title="Secured rate by interaction length"><RateBarChart data={durationRates} /></ChartCard>}
                   {selfLooksRates.length > 0 && <ChartCard title="Secured rate by how you felt you looked that day"><RateBarChart data={selfLooksRates} /></ChartCard>}
+                  {noiseLevelRates.length > 0 && <ChartCard title="Secured rate by venue noise level"><RateBarChart data={noiseLevelRates} /></ChartCard>}
+                  {barSubtypeRates.length > 0 && <ChartCard title="Secured rate by bar subtype (dancing vs sitting)"><RateBarChart data={barSubtypeRates} /></ChartCard>}
+                  {standingOrSittingRates.length > 0 && <ChartCard title="Secured rate: standing vs sitting when approaching"><RateBarChart data={standingOrSittingRates} /></ChartCard>}
                   <CountTable title="Outcome distribution (all approaches)" rows={outcomeDist} />
                   <CountTable title="Follow-up distribution (secured only)" rows={followUpDist} />
                   {rejectionReasonDist.length > 0 && <CountTable title="Rejection reasons (unsuccessful approaches)" rows={rejectionReasonDist} />}
@@ -520,7 +537,8 @@ function FieldLog() {
                     {avgConvoSecured !== "—" && <div style={{ fontSize: 12, color: COLORS.ink, marginBottom: 4 }}>Conversation quality — secured: {avgConvoSecured} · not secured: {avgConvoNot}</div>}
                     {avgTensionSecured !== "—" && <div style={{ fontSize: 12, color: COLORS.ink, marginBottom: 4 }}>Sexual tension — secured: {avgTensionSecured} · not secured: {avgTensionNot}</div>}
                     {avgDurationSecured !== "—" && <div style={{ fontSize: 12, color: COLORS.ink, marginBottom: 4 }}>Interaction length (min) — secured: {avgDurationSecured} · not secured: {avgDurationNot}</div>}
-                    {avgSelfLooksSecured !== "—" && <div style={{ fontSize: 12, color: COLORS.ink }}>How you felt you looked — secured: {avgSelfLooksSecured} · not secured: {avgSelfLooksNot}</div>}
+                    {avgSelfLooksSecured !== "—" && <div style={{ fontSize: 12, color: COLORS.ink, marginBottom: 4 }}>How you felt you looked — secured: {avgSelfLooksSecured} · not secured: {avgSelfLooksNot}</div>}
+                    {avgNoiseSecured !== "—" && <div style={{ fontSize: 12, color: COLORS.ink }}>Venue noise level — secured: {avgNoiseSecured} · not secured: {avgNoiseNot}</div>}
                   </div>
                 </div>
               </>
@@ -660,6 +678,9 @@ function ApproachesTab({ approaches, onEdit, onDelete, onUpdate, confirmReset, s
   const bySexualTension = groupRate(filtered.filter((e) => e.sexualTension), (e) => bucketScale10(e.sexualTension));
   const byDuration = groupRate(filtered.filter((e) => e.duration), (e) => bucketDuration(e.duration));
   const bySelfLooks = groupRate(filtered.filter((e) => e.selfLooksRating), (e) => bucketScale10(e.selfLooksRating));
+  const byNoiseLevel = groupRate(filtered.filter((e) => e.noiseLevel), (e) => bucketScale10(e.noiseLevel));
+  const byBarSubtype = groupRate(filtered.filter((e) => e.venueType === "bar" && e.barSubtype), (e) => labelFor(BAR_SUBTYPE, e.barSubtype));
+  const byStandingOrSitting = groupRate(filtered.filter((e) => e.standingOrSitting), (e) => labelFor(STANDING_OR_SITTING, e.standingOrSitting));
   const byInterest = groupRate(filtered, (e) => labelFor(INITIAL_INTEREST, e.initialInterest));
   const byEthnicity = groupRate(filtered, (e) => labelFor(ETHNICITIES, e.ethnicity, e.ethnicityCustom));
   const byOpener = groupRate(filtered, (e) => labelFor(OPENERS, e.opener, e.openerCustom));
@@ -777,6 +798,9 @@ function ApproachesTab({ approaches, onEdit, onDelete, onUpdate, confirmReset, s
           {bySexualTension.length > 0 && <ChartCard title="Secured rate by sexual tension"><RateBarChart data={bySexualTension} /></ChartCard>}
           {byDuration.length > 0 && <ChartCard title="Secured rate by interaction length"><RateBarChart data={byDuration} /></ChartCard>}
           {bySelfLooks.length > 0 && <ChartCard title="Secured rate by how you felt you looked"><RateBarChart data={bySelfLooks} /></ChartCard>}
+          {byNoiseLevel.length > 0 && <ChartCard title="Secured rate by venue noise level"><RateBarChart data={byNoiseLevel} /></ChartCard>}
+          {byBarSubtype.length > 0 && <ChartCard title="Secured rate by bar subtype (dancing vs sitting)"><RateBarChart data={byBarSubtype} /></ChartCard>}
+          {byStandingOrSitting.length > 0 && <ChartCard title="Secured rate: standing vs sitting when approaching"><RateBarChart data={byStandingOrSitting} /></ChartCard>}
           {followUpData.length > 0 && (
             <ChartCard title="Follow-up outcome breakdown">
               <ResponsiveContainer width="100%" height={210}>
@@ -872,15 +896,20 @@ function ApproachRow({ entry, onEdit, onDelete, onUpdate }) {
             {entry.venueName && entry.venueName.trim() ? entry.venueName.trim() : labelFor(VENUE_TYPES, entry.venueType)} · {labelFor(ETHNICITIES, entry.ethnicity, entry.ethnicityCustom)}
             {entry.timeOfNight ? ` · ${labelFor(TIME_OF_NIGHT, entry.timeOfNight)}` : ""}
           </div>
+          {(entry.barSubtype || entry.standingOrSitting) && (
+            <div style={{ fontSize: 12, color: COLORS.inkMuted, marginTop: 2 }}>
+              {entry.barSubtype ? labelFor(BAR_SUBTYPE, entry.barSubtype) : ""}{entry.barSubtype && entry.standingOrSitting ? " · " : ""}{entry.standingOrSitting ? labelFor(STANDING_OR_SITTING, entry.standingOrSitting) : ""}
+            </div>
+          )}
           {(entry.approachAngle || entry.goodLook || entry.eyeContact || entry.facePosition) && (
             <div style={{ fontSize: 12, color: COLORS.inkMuted, marginTop: 2 }}>
               {entry.approachAngle ? `Approached from ${labelFor(APPROACH_ANGLE, entry.approachAngle).toLowerCase()}` : ""}{entry.approachAngle && entry.eyeContact ? " · " : ""}{entry.eyeContact ? `Eye contact: ${labelFor(EYE_CONTACT, entry.eyeContact)}` : ""}{(entry.approachAngle || entry.eyeContact) && entry.goodLook ? " · " : ""}{entry.goodLook ? labelFor(GOOD_LOOK, entry.goodLook) : ""}{(entry.approachAngle || entry.eyeContact || entry.goodLook) && entry.facePosition ? " · " : ""}{entry.facePosition ? labelFor(FACE_POSITION, entry.facePosition) : ""}
             </div>
           )}
           <div style={{ fontSize: 12, color: COLORS.inkMuted, marginTop: 2 }}>Interest: {labelFor(INITIAL_INTEREST, entry.initialInterest)} · Attr {entry.attractiveness}/10 · Rating {entry.overallRating}/10{entry.confidence ? ` · Confidence ${entry.confidence}/10` : ""}{entry.selfLooksRating ? ` · My look ${entry.selfLooksRating}/10` : ""}</div>
-          {(entry.convoQuality || entry.sexualTension || entry.duration) && (
+          {(entry.convoQuality || entry.sexualTension || entry.duration || entry.noiseLevel) && (
             <div style={{ fontSize: 12, color: COLORS.inkMuted, marginTop: 2 }}>
-              {entry.convoQuality ? `Convo ${entry.convoQuality}/10` : ""}{entry.convoQuality && entry.sexualTension ? " · " : ""}{entry.sexualTension ? `Tension ${entry.sexualTension}/10` : ""}{(entry.convoQuality || entry.sexualTension) && entry.duration ? " · " : ""}{entry.duration ? `${entry.duration} min` : ""}
+              {entry.convoQuality ? `Convo ${entry.convoQuality}/10` : ""}{entry.convoQuality && entry.sexualTension ? " · " : ""}{entry.sexualTension ? `Tension ${entry.sexualTension}/10` : ""}{(entry.convoQuality || entry.sexualTension) && entry.duration ? " · " : ""}{entry.duration ? `${entry.duration} min` : ""}{(entry.convoQuality || entry.sexualTension || entry.duration) && entry.noiseLevel ? " · " : ""}{entry.noiseLevel ? `Noise ${entry.noiseLevel}/10` : ""}
             </div>
           )}
           <div style={{ fontSize: 12, color: COLORS.inkMuted, marginTop: 2 }}>Opener: {labelFor(OPENERS, entry.opener, entry.openerCustom)}</div>
@@ -916,6 +945,8 @@ function ApproachForm({ title, initial, onSave, onClose }) {
   const [date, setDate] = useState(initial?.date || todayISO());
   const [name, setName] = useState(initial?.name || "");
   const [venueType, setVenueType] = useState(initial?.venueType || "bar");
+  const [barSubtype, setBarSubtype] = useState(initial?.barSubtype || "");
+  const [standingOrSitting, setStandingOrSitting] = useState(initial?.standingOrSitting || "");
   const [venueName, setVenueName] = useState(initial?.venueName || "");
   const [timeOfNight, setTimeOfNight] = useState(initial?.timeOfNight || "");
   const [groupContext, setGroupContext] = useState(initial?.groupContext || "");
@@ -938,6 +969,7 @@ function ApproachForm({ title, initial, onSave, onClose }) {
   const [selfLooksRating, setSelfLooksRating] = useState(initial?.selfLooksRating ?? 5);
   const [overallRating, setOverallRating] = useState(initial?.overallRating ?? 5);
   const [confidence, setConfidence] = useState(initial?.confidence ?? 5);
+  const [noiseLevel, setNoiseLevel] = useState(initial?.noiseLevel ?? 5);
   const [duration, setDuration] = useState(initial?.duration ?? "");
   const [convoQuality, setConvoQuality] = useState(initial?.convoQuality ?? 5);
   const [sexualTension, setSexualTension] = useState(initial?.sexualTension ?? 5);
@@ -952,6 +984,12 @@ function ApproachForm({ title, initial, onSave, onClose }) {
       <Field label="Venue type">
         <select value={venueType} onChange={(e) => setVenueType(e.target.value)} style={inputStyle}>{VENUE_TYPES.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}</select>
       </Field>
+      {venueType === "bar" && (
+        <Field label="Bar subtype"><SegToggle options={BAR_SUBTYPE} value={barSubtype} onChange={setBarSubtype} /></Field>
+      )}
+      {venueType === "bar" && barSubtype === "sitting" && (
+        <Field label="Were you standing or sitting when you approached?"><SegToggle options={STANDING_OR_SITTING} value={standingOrSitting} onChange={setStandingOrSitting} /></Field>
+      )}
       <Field label="Specific venue name (optional)"><input value={venueName} onChange={(e) => setVenueName(e.target.value)} style={inputStyle} placeholder="e.g. Le Bain" /></Field>
       <Field label="Time of night"><SegToggle options={TIME_OF_NIGHT} value={timeOfNight} onChange={setTimeOfNight} /></Field>
       <Field label="Group context"><SegToggle options={GROUP_CONTEXT} value={groupContext} onChange={setGroupContext} /></Field>
@@ -990,6 +1028,7 @@ function ApproachForm({ title, initial, onSave, onClose }) {
       <Field label={`How you felt you looked that day: ${selfLooksRating}/10`}><input type="range" min="1" max="10" value={selfLooksRating} onChange={(e) => setSelfLooksRating(Number(e.target.value))} style={{ width: "100%" }} /></Field>
       <Field label={`Overall interaction rating: ${overallRating}/10`}><input type="range" min="1" max="10" value={overallRating} onChange={(e) => setOverallRating(Number(e.target.value))} style={{ width: "100%" }} /></Field>
       <Field label={`Confidence going in: ${confidence}/10`}><input type="range" min="1" max="10" value={confidence} onChange={(e) => setConfidence(Number(e.target.value))} style={{ width: "100%" }} /></Field>
+      <Field label={`Venue noise level: ${noiseLevel}/10`}><input type="range" min="1" max="10" value={noiseLevel} onChange={(e) => setNoiseLevel(Number(e.target.value))} style={{ width: "100%" }} /></Field>
       <Field label={`Conversation quality: ${convoQuality}/10`}><input type="range" min="1" max="10" value={convoQuality} onChange={(e) => setConvoQuality(Number(e.target.value))} style={{ width: "100%" }} /></Field>
       <Field label={`Sexual tension: ${sexualTension}/10`}><input type="range" min="1" max="10" value={sexualTension} onChange={(e) => setSexualTension(Number(e.target.value))} style={{ width: "100%" }} /></Field>
       <Field label="Interaction length (minutes, optional)"><input type="number" min="0" value={duration} onChange={(e) => setDuration(e.target.value)} style={inputStyle} placeholder="e.g. 8" /></Field>
@@ -1003,7 +1042,7 @@ function ApproachForm({ title, initial, onSave, onClose }) {
         </Field>
       )}
       <Field label="Notes"><textarea value={notes} onChange={(e) => setNotes(e.target.value)} style={{ ...inputStyle, minHeight: 70, resize: "none" }} placeholder="Context, what happened..." /></Field>
-      <button onClick={() => onSave({ date, name: name.trim(), venueType, venueName: venueName.trim(), timeOfNight, groupContext, preApproachSignal, approachAngle, goodLook, eyeContact, facePosition, ethnicity, ethnicityCustom, initialInterest, makeOut, hadSexSameNight, opener, openerCustom, exactOpener: exactOpener.trim(), outcome, outcomeCustom, attractiveness, selfLooksRating, overallRating, confidence, duration: duration ? Number(duration) : "", convoQuality, sexualTension, rejectionReason: outcome === "nothing" ? rejectionReason : "", rejectionReasonCustom, notes: notes.trim() })} style={btnSolid}>Save</button>
+      <button onClick={() => onSave({ date, name: name.trim(), venueType, barSubtype: venueType === "bar" ? barSubtype : "", standingOrSitting: venueType === "bar" && barSubtype === "sitting" ? standingOrSitting : "", venueName: venueName.trim(), timeOfNight, groupContext, preApproachSignal, approachAngle, goodLook, eyeContact, facePosition, ethnicity, ethnicityCustom, initialInterest, makeOut, hadSexSameNight, opener, openerCustom, exactOpener: exactOpener.trim(), outcome, outcomeCustom, attractiveness, selfLooksRating, overallRating, confidence, noiseLevel, duration: duration ? Number(duration) : "", convoQuality, sexualTension, rejectionReason: outcome === "nothing" ? rejectionReason : "", rejectionReasonCustom, notes: notes.trim() })} style={btnSolid}>Save</button>
     </Sheet>
   );
 }
