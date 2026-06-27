@@ -640,6 +640,19 @@ function ApproachesTab({ approaches, onEdit, onDelete, onUpdate, confirmReset, s
   const securedRate = filtered.length ? Math.round((securedCount / filtered.length) * 100) : 0;
 
   const byVenue = groupRate(filtered, (e) => labelFor(VENUE_TYPES, e.venueType));
+  const byVenueName = groupRate(filtered.filter((e) => e.venueName && e.venueName.trim()), (e) => e.venueName.trim());
+  const byTimeOfNight = groupRate(filtered.filter((e) => e.timeOfNight), (e) => labelFor(TIME_OF_NIGHT, e.timeOfNight));
+  const byGroupContext = groupRate(filtered.filter((e) => e.groupContext), (e) => labelFor(GROUP_CONTEXT, e.groupContext));
+  const byPreApproach = groupRate(filtered.filter((e) => e.preApproachSignal), (e) => labelFor(PRE_APPROACH_SIGNAL, e.preApproachSignal));
+  const byApproachAngle = groupRate(filtered.filter((e) => e.approachAngle), (e) => labelFor(APPROACH_ANGLE, e.approachAngle));
+  const byGoodLook = groupRate(filtered.filter((e) => e.goodLook), (e) => labelFor(GOOD_LOOK, e.goodLook));
+  const byEyeContact = groupRate(filtered.filter((e) => e.eyeContact), (e) => labelFor(EYE_CONTACT, e.eyeContact));
+  const byMakeout = groupRate(filtered, (e) => (e.makeOut ? "Made out" : "No makeout"));
+  const byHadSex = groupRate(filtered, (e) => (e.hadSexSameNight ? "Same-night sex" : "No same-night sex"));
+  const byConvoQuality = groupRate(filtered.filter((e) => e.convoQuality), (e) => bucketScale10(e.convoQuality));
+  const bySexualTension = groupRate(filtered.filter((e) => e.sexualTension), (e) => bucketScale10(e.sexualTension));
+  const byDuration = groupRate(filtered.filter((e) => e.duration), (e) => bucketDuration(e.duration));
+  const bySelfLooks = groupRate(filtered.filter((e) => e.selfLooksRating), (e) => bucketScale10(e.selfLooksRating));
   const byInterest = groupRate(filtered, (e) => labelFor(INITIAL_INTEREST, e.initialInterest));
   const byEthnicity = groupRate(filtered, (e) => labelFor(ETHNICITIES, e.ethnicity, e.ethnicityCustom));
   const byOpener = groupRate(filtered, (e) => labelFor(OPENERS, e.opener, e.openerCustom));
@@ -740,9 +753,22 @@ function ApproachesTab({ approaches, onEdit, onDelete, onUpdate, confirmReset, s
       {filtered.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 18, marginBottom: 24 }}>
           <ChartCard title="Secured rate by venue"><RateBarChart data={byVenue} /></ChartCard>
+          {byVenueName.length > 0 && <ChartCard title="Secured rate by specific venue"><RateBarChart data={byVenueName} /></ChartCard>}
+          {byTimeOfNight.length > 0 && <ChartCard title="Secured rate by time of night"><RateBarChart data={byTimeOfNight} /></ChartCard>}
           <ChartCard title="Secured rate by initial interest"><RateBarChart data={byInterest} /></ChartCard>
           <ChartCard title="Secured rate by ethnicity"><RateBarChart data={byEthnicity} /></ChartCard>
           <ChartCard title="Secured rate by opener"><RateBarChart data={byOpener} /></ChartCard>
+          {byGroupContext.length > 0 && <ChartCard title="Secured rate by group context"><RateBarChart data={byGroupContext} /></ChartCard>}
+          {byPreApproach.length > 0 && <ChartCard title="Secured rate by pre-approach signal"><RateBarChart data={byPreApproach} /></ChartCard>}
+          {byApproachAngle.length > 0 && <ChartCard title="Secured rate by approach angle"><RateBarChart data={byApproachAngle} /></ChartCard>}
+          {byGoodLook.length > 0 && <ChartCard title="Secured rate by whether she got a good look"><RateBarChart data={byGoodLook} /></ChartCard>}
+          {byEyeContact.length > 0 && <ChartCard title="Secured rate by eye contact before approach"><RateBarChart data={byEyeContact} /></ChartCard>}
+          <ChartCard title="Secured rate: makeout vs. no makeout"><RateBarChart data={byMakeout} /></ChartCard>
+          <ChartCard title="Secured rate: same-night sex vs. not"><RateBarChart data={byHadSex} /></ChartCard>
+          {byConvoQuality.length > 0 && <ChartCard title="Secured rate by conversation quality"><RateBarChart data={byConvoQuality} /></ChartCard>}
+          {bySexualTension.length > 0 && <ChartCard title="Secured rate by sexual tension"><RateBarChart data={bySexualTension} /></ChartCard>}
+          {byDuration.length > 0 && <ChartCard title="Secured rate by interaction length"><RateBarChart data={byDuration} /></ChartCard>}
+          {bySelfLooks.length > 0 && <ChartCard title="Secured rate by how you felt you looked"><RateBarChart data={bySelfLooks} /></ChartCard>}
           {followUpData.length > 0 && (
             <ChartCard title="Follow-up outcome breakdown">
               <ResponsiveContainer width="100%" height={210}>
